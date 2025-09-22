@@ -16,3 +16,10 @@ requests
 requests-toolbelt
 scikit-learn
 tensorflow
+flask
+numpy
+pandas
+requests
+requests-toolbelt
+scikit-learn
+tensorflow
