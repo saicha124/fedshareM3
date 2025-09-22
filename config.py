@@ -85,7 +85,7 @@ class HierConfig(Config):
     signature_verification = True
     
     # Training Parameters (optimized for hierarchical setup)
-    hier_training_rounds = 2  # Reduced for faster testing
+    hier_training_rounds = 3  # Updated to match main config
     hier_epochs = 1
     hier_batch_size = 32
     
