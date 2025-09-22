@@ -1,10 +1,11 @@
 # FedShare - Federated Learning Framework
 
 ## Overview
-This is a federated learning research project implementing three algorithms:
+This is a federated learning research project implementing four algorithms:
 - **FedShare**: The main algorithm with privacy-preserving features
 - **FedAvg**: Classical federated averaging algorithm  
 - **SCOTCH**: Another federated learning approach
+- **Hierarchical Federated Learning**: Advanced hierarchical algorithm with fog nodes, validator committees, and Byzantine fault tolerance
 
 The project is built with Python 3.11, TensorFlow 2.20.0, and Flask for the web interface.
 
@@ -26,9 +27,16 @@ Access the web interface at the main URL. Click buttons to run algorithms direct
 
 ## Files Structure
 - `enhanced_app.py` - Main web interface with progress tracking
-- `config.py` - Configuration for clients, servers, and training parameters
+- `config.py` - Configuration for clients, servers, and training parameters including hierarchical algorithm parameters
 - `start-*.sh` - Shell scripts to launch federated learning algorithms
 - `logs/` - Training logs and results storage
+- **Hierarchical FL Components**:
+  - `hierfedclient.py` - Healthcare facility client with differential privacy
+  - `hierfognode.py` - Fog node server for partial aggregation
+  - `hiervalidator.py` - Validator committee for Byzantine fault tolerance
+  - `hierleadserver.py` - Leader server for global aggregation
+  - `hierta.py` - Trusted Authority for system coordination
+  - `start-hierfed.sh` - Hierarchical federated learning startup script
 
 ## Development Notes  
 - **2025-09-18**: Successfully imported from GitHub and configured for Replit environment
@@ -52,7 +60,22 @@ Access the web interface at the main URL. Click buttons to run algorithms direct
 - ✅ Web interface fully functional with real-time progress tracking
 - ✅ All dependencies installed using pip --user (TensorFlow 2.20.0, Flask 3.1.2, etc.)
 - ✅ Frontend properly bound to 0.0.0.0:5000 for Replit proxy compatibility
-- ✅ All three algorithms (FedShare, FedAvg, SCOTCH) ready to run
+- ✅ All four algorithms (FedShare, FedAvg, SCOTCH, Hierarchical FL) ready to run
 - ✅ Deployment configured for VM target with proper run command
 - ✅ Shell scripts executable and properly configured
 - ✅ **Import process completed successfully - ready for use**
+- ✅ **NEW**: Hierarchical Federated Learning algorithm implemented with fog nodes, validator committees, and advanced security features
+
+## Hierarchical Federated Learning Features
+- **Architecture**: Healthcare facilities → Validator Committee → Fog Nodes → Leader Server → Global Model
+- **Security Features**: Differential privacy, Shamir's secret sharing, CP-ABE encryption, Proof-of-Work validation
+- **Byzantine Fault Tolerance**: Validator committee consensus for robust model aggregation
+- **Multi-tier Aggregation**: Fog nodes for regional aggregation, leader server for global coordination
+- **Trusted Authority**: System initialization, participant registration, and access control management
+
+## Implementation Notes
+- **2025-09-22**: Successfully implemented hierarchical federated learning algorithm based on research paper
+- Current implementation provides demonstration-level security features suitable for research and testing
+- For production deployment, security components would need production-grade cryptographic implementations
+- All hierarchical components integrated into existing web interface with real-time progress tracking
+- Configuration system extended with HierConfig class supporting all hierarchical algorithm parameters
