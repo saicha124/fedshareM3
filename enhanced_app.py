@@ -31,12 +31,20 @@ def parse_logs_for_progress(algorithm):
     # Generate dynamic log directory names based on current config
     if algorithm == 'fedavg':
         log_dir_name = f"fedavg-mnist-client-{total_clients}"
+    elif algorithm == 'hierfed':
+        # Hierarchical federated learning has different structure
+        from config import HierConfig
+        hier_config = HierConfig()
+        facilities = hier_config.number_of_facilities
+        fog_nodes = hier_config.num_fog_nodes
+        validators = hier_config.committee_size
+        log_dir_name = f"hierfed-facilities-{facilities}-fog-{fog_nodes}-validators-{validators}"
     else:
         log_dir_name = f"{algorithm}-mnist-client-{total_clients}-server-{num_servers}"
     
     log_dir = f"logs/{log_dir_name}"
     
-    if algorithm not in ['fedshare', 'fedavg', 'scotch']:
+    if algorithm not in ['fedshare', 'fedavg', 'scotch', 'hierfed']:
         return {}
         
     progress = {
@@ -53,11 +61,71 @@ def parse_logs_for_progress(algorithm):
     if not os.path.exists(log_dir):
         return progress
     
-    # Check client logs for training progress
-    for i in range(total_clients):
-        client_log = f"{log_dir}/{algorithm}client-{i}.log"
-        if os.path.exists(client_log):
-            progress['clients_started'] += 1
+    # Handle hierarchical federated learning structure differently
+    if algorithm == 'hierfed':
+        from config import HierConfig
+        hier_config = HierConfig()
+        total_clients = hier_config.number_of_facilities
+        total_rounds = hier_config.hier_training_rounds
+        progress['total_clients'] = total_clients
+        progress['total_rounds'] = total_rounds
+        
+        # Check healthcare facility logs
+        for i in range(total_clients):
+            client_log = f"{log_dir}/hierfedclient-{i}.log"
+            if os.path.exists(client_log):
+                progress['clients_started'] += 1
+                try:
+                    with open(client_log, 'r') as f:
+                        content = f.read()
+                        
+                    # Extract round information for hierarchical structure
+                    rounds = re.findall(r'Round: (\d+)/(\d+)', content)
+                    if rounds:
+                        latest_round = max([int(r[0]) for r in rounds])
+                        progress['current_round'] = max(progress['current_round'], latest_round)
+                    
+                    # Extract facility completion
+                    completed_rounds = content.count('FACILITY] Round')
+                    training_finished = content.count('Training completed')
+                    
+                    if training_finished > 0:
+                        progress['training_progress'] = 100
+                    else:
+                        round_progress = min(100, (completed_rounds / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
+                        progress['training_progress'] = max(progress['training_progress'], round_progress)
+                    
+                    # Extract performance metrics
+                    accuracy_matches = re.findall(r'accuracy: ([\d.]+)', content)
+                    loss_matches = re.findall(r'loss: ([\d.]+)', content)
+                    if accuracy_matches:
+                        progress['metrics'][f'facility_{i}_accuracy'] = float(accuracy_matches[-1])
+                    if loss_matches:
+                        progress['metrics'][f'facility_{i}_loss'] = float(loss_matches[-1])
+                        
+                except Exception as e:
+                    print(f"Error reading facility log {client_log}: {e}")
+        
+        # Check fog node and leader server logs for global completion
+        leader_log = f"{log_dir}/hierleadserver.log"
+        if os.path.exists(leader_log):
+            try:
+                with open(leader_log, 'r') as f:
+                    content = f.read()
+                
+                global_aggregations = content.count('LEADER] Round')
+                if global_aggregations >= total_rounds:
+                    progress['training_progress'] = 100
+                    progress['status'] = 'completed'
+                    
+            except Exception as e:
+                print(f"Error reading leader server log: {e}")
+    else:
+        # Check client logs for training progress (original logic)
+        for i in range(total_clients):
+            client_log = f"{log_dir}/{algorithm}client-{i}.log"
+            if os.path.exists(client_log):
+                progress['clients_started'] += 1
             try:
                 with open(client_log, 'r') as f:
                     content = f.read()
@@ -945,6 +1013,30 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             </div>
         </div>
 
+        <div class="algorithm-section" style="background: linear-gradient(145deg, #f0e8ff, #ffffff); border-color: #9b59b6;">
+            <div class="algorithm-title">
+                <span class="emoji">🌫️</span>Hierarchical Federated Learning
+            </div>
+            <div class="algorithm-description">
+                Advanced hierarchical federated learning with fog nodes, validator committees, and Byzantine fault tolerance.
+                Features differential privacy, Shamir's secret sharing, CP-ABE encryption, and Proof-of-Work for Sybil resistance.
+                Healthcare facilities → Validator Committee → Fog Nodes → Leader Server → Global Model.
+            </div>
+            <div class="controls">
+                <button id="hierfed-run-btn" class="btn" onclick="runAlgorithm('hierfed')">Run Hierarchical FL</button>
+                <a href="/logs/hierfed" class="btn btn-success">View Logs</a>
+            </div>
+            <div id="hierfed-progress" class="progress-container">
+                <div class="progress-bar">
+                    <div id="hierfed-progress-fill" class="progress-fill">
+                        <div id="hierfed-progress-text" class="progress-text">0%</div>
+                    </div>
+                </div>
+                <div id="hierfed-status"></div>
+                <div id="hierfed-metrics"></div>
+            </div>
+        </div>
+
         <div class="info-box">
             <strong>📋 Training Configuration:</strong>
             <ul style="margin: 10px 0;">
@@ -978,7 +1070,7 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(progress).encode())
     
     def run_algorithm(self, algorithm):
-        if algorithm not in ['fedshare', 'fedavg', 'scotch']:
+        if algorithm not in ['fedshare', 'fedavg', 'scotch', 'hierfed']:
             self.send_error(400, "Invalid algorithm")
             return
         
@@ -1011,7 +1103,8 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                 # For other algorithms, use the original shell script approach
                 script_map = {
                     'fedavg': './start-fedavg.sh', 
-                    'scotch': './start-scotch.sh'
+                    'scotch': './start-scotch.sh',
+                    'hierfed': './start-hierfed.sh'
                 }
                 script_path = script_map[algorithm]
                 print(f"Starting {algorithm}: {script_path}")

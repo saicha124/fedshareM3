@@ -41,3 +41,87 @@ class LeadConfig(Config):
 class FedAvgServerConfig(Config):
     def __init__(self):
         pass
+
+
+# Hierarchical Federated Learning Configuration
+class HierConfig(Config):
+    # Healthcare Facilities (Clients)
+    number_of_facilities = 4  # Healthcare facilities (equivalent to clients)
+    facility_base_port = 9600
+    
+    # Fog Nodes Configuration  
+    num_fog_nodes = 3  # Number of fog nodes for intermediate aggregation
+    fog_node_base_port = 8600
+    
+    # Validator Committee Configuration
+    committee_size = 3  # Number of validator committee members
+    committee_base_port = 8700
+    consensus_threshold = 2  # Minimum votes needed (majority)
+    
+    # Trusted Authority Configuration
+    ta_port = 7600
+    ta_address = '127.0.0.1'
+    
+    # Leader Server (randomly selected from fog nodes)
+    leader_port = 7650
+    
+    # Differential Privacy Parameters
+    dp_noise_scale = 0.1  # Gaussian noise scale (σ²)
+    privacy_epsilon = 1.0  # Privacy budget (ε)
+    privacy_delta = 1e-5   # Privacy budget (δ)
+    
+    # Secret Sharing Parameters (Shamir's)
+    secret_threshold = 2  # Minimum shares needed to reconstruct
+    
+    # Proof-of-Work Parameters for Sybil Resistance  
+    pow_difficulty = 4  # Number of leading zeros required in hash
+    pow_target = 2**(256 - pow_difficulty)  # Difficulty target
+    
+    # Byzantine Fault Tolerance
+    max_byzantine_nodes = 1  # Maximum number of Byzantine nodes tolerated
+    
+    # Communication and Security
+    enable_encryption = True
+    signature_verification = True
+    
+    # Training Parameters (optimized for hierarchical setup)
+    hier_training_rounds = 2  # Reduced for faster testing
+    hier_epochs = 1
+    hier_batch_size = 32
+    
+    # Dataset distribution per facility
+    @property
+    def facilities_dataset_size(self):
+        return [self.train_dataset_size/self.number_of_facilities] * self.number_of_facilities
+
+
+class HierFacilityConfig(HierConfig):
+    def __init__(self, facility_index):
+        super().__init__()
+        self.facility_index = facility_index
+        self.facility_port = self.facility_base_port + facility_index
+
+
+class HierFogNodeConfig(HierConfig):
+    def __init__(self, fog_node_index):
+        super().__init__()
+        self.fog_node_index = fog_node_index
+        self.fog_node_port = self.fog_node_base_port + fog_node_index
+
+
+class HierValidatorConfig(HierConfig):
+    def __init__(self, validator_index):
+        super().__init__()
+        self.validator_index = validator_index
+        self.validator_port = self.committee_base_port + validator_index
+
+
+class HierTrustedAuthorityConfig(HierConfig):
+    def __init__(self):
+        super().__init__()
+
+
+class HierLeaderConfig(HierConfig):
+    def __init__(self, leader_fog_index=0):
+        super().__init__()
+        self.leader_fog_index = leader_fog_index  # Which fog node is the leader
