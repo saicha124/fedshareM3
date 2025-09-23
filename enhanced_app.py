@@ -1480,9 +1480,9 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             # Add HierConfig parameters if available
             if hasattr(config, 'HierConfig'):
                 hier_config = {
-                    'hier_facilities': config.HierConfig.hier_facilities,
-                    'hier_fog_nodes': config.HierConfig.hier_fog_nodes,
-                    'hier_validators': config.HierConfig.hier_validators,
+                    'hier_facilities': config.HierConfig.number_of_facilities,
+                    'hier_fog_nodes': config.HierConfig.num_fog_nodes,
+                    'hier_validators': config.HierConfig.committee_size,
                     'hier_training_rounds': config.HierConfig.hier_training_rounds,
                     'dp_enabled': config.HierConfig.dp_enabled,
                     'dp_epsilon': config.HierConfig.dp_epsilon,
