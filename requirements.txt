@@ -18,3 +18,10 @@ requests>=2.25.0
 requests-toolbelt>=1.0.0
 scikit-learn>=1.0.0
 tensorflow>=2.15.0
+cryptography
+flask
+numpy
+pandas
+requests
+scikit-learn
+tensorflow

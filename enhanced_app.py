@@ -1463,18 +1463,6 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                 <div id="hier-config-result"></div>
             </div>
         </div>
-                    <div class="config-item">
-                        <label>Enable Cryptographic Signatures:</label>
-                        <select id="ss_signing">
-                            <option value="true" selected>Yes</option>
-                            <option value="false">No</option>
-                        </select>
-                    </div>
-                </div>
-                <button class="btn" onclick="updateSSConfig()">Update Configuration</button>
-                <div id="ss-result"></div>
-            </div>
-        </div>
 
         <div class="info-box">
             <strong>📋 Training Configuration:</strong>
