@@ -1477,6 +1477,26 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                 'epochs': config.Config.epochs
             }
             
+            # Add HierConfig parameters if available
+            if hasattr(config, 'HierConfig'):
+                hier_config = {
+                    'hier_facilities': config.HierConfig.hier_facilities,
+                    'hier_fog_nodes': config.HierConfig.hier_fog_nodes,
+                    'hier_validators': config.HierConfig.hier_validators,
+                    'hier_training_rounds': config.HierConfig.hier_training_rounds,
+                    'dp_enabled': config.HierConfig.dp_enabled,
+                    'dp_epsilon': config.HierConfig.dp_epsilon,
+                    'dp_delta': config.HierConfig.dp_delta,
+                    'dp_clip_norm': config.HierConfig.dp_clip_norm,
+                    'dp_mechanism': config.HierConfig.dp_mechanism,
+                    'dp_noise_multiplier': config.HierConfig.dp_noise_multiplier,
+                    'secret_sharing_enabled': config.HierConfig.secret_sharing_enabled,
+                    'secret_num_shares': config.HierConfig.secret_num_shares,
+                    'secret_threshold': config.HierConfig.secret_threshold,
+                    'share_signing_enabled': config.HierConfig.share_signing_enabled
+                }
+                current_config.update(hier_config)
+            
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Cache-Control', 'no-cache')
