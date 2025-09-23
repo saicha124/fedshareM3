@@ -66,12 +66,18 @@ class HierConfig(Config):
     leader_port = 7650
     
     # Differential Privacy Parameters
-    dp_noise_scale = 0.1  # Gaussian noise scale (σ²)
-    privacy_epsilon = 1.0  # Privacy budget (ε)
-    privacy_delta = 1e-5   # Privacy budget (δ)
+    dp_enabled = True  # Enable/disable differential privacy
+    dp_mechanism = 'gaussian'  # Differential privacy mechanism
+    dp_clip_norm = 1.0  # Gradient clipping norm
+    dp_epsilon = 1.0  # Privacy budget (ε)
+    dp_delta = 1e-5   # Privacy budget (δ)
+    dp_noise_multiplier = 0.1  # Noise multiplier for DP (σ)
     
     # Secret Sharing Parameters (Shamir's)
+    secret_sharing_enabled = True  # Enable/disable secret sharing
+    secret_num_shares = None  # Number of shares (defaults to num_fog_nodes)
     secret_threshold = 2  # Minimum shares needed to reconstruct
+    share_signing_enabled = True  # Enable cryptographic signatures on shares
     
     # Proof-of-Work Parameters for Sybil Resistance  
     pow_difficulty = 4  # Number of leading zeros required in hash
@@ -93,6 +99,11 @@ class HierConfig(Config):
     @property
     def facilities_dataset_size(self):
         return [self.train_dataset_size/self.number_of_facilities] * self.number_of_facilities
+    
+    # Dynamic secret sharing configuration
+    @property
+    def secret_num_shares_computed(self):
+        return self.secret_num_shares if self.secret_num_shares is not None else self.num_fog_nodes
 
 
 class HierFacilityConfig(HierConfig):

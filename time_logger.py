@@ -74,4 +74,10 @@ def print_result():
     post_print(url)
 
 def post_print(url):
-    print(requests.post(url).json())
+    try:
+        response = requests.post(url, timeout=2)
+        print(response.json())
+    except requests.exceptions.RequestException as e:
+        # Logger server unavailable - continue silently to prevent training crashes
+        print(f"Logger unavailable: {e}")
+        pass

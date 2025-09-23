@@ -23,12 +23,18 @@ mkdir -p logs/${DEST_DIRECTORY}
 
 echo "Starting Hierarchical Federated Learning System..."
 
-# Step 1: Start Trusted Authority
+# Step 1: Start Logger Server (required by all components)
+echo "Starting Logger Server..."
+nohup python logger_server.py &>logs/${DEST_DIRECTORY}/logger_server.log &
+echo "Logger server started"
+sleep 1
+
+# Step 2: Start Trusted Authority
 echo "Starting Trusted Authority..."
 nohup python hierta.py &>logs/${DEST_DIRECTORY}/hierta.log &
 echo "Trusted Authority started"
 
-# Step 2: Start Validator Committee
+# Step 3: Start Validator Committee
 echo "Starting Validator Committee..."
 for ((VALIDATOR = 0; VALIDATOR < VALIDATORS; VALIDATOR++)); do
   echo "  Starting validator ${VALIDATOR}..."
@@ -36,7 +42,7 @@ for ((VALIDATOR = 0; VALIDATOR < VALIDATORS; VALIDATOR++)); do
 done
 echo "All validators started"
 
-# Step 3: Start Fog Nodes
+# Step 4: Start Fog Nodes
 echo "Starting Fog Nodes..."
 for ((FOG = 0; FOG < FOG_NODES; FOG++)); do
   echo "  Starting fog node ${FOG}..."
@@ -44,7 +50,7 @@ for ((FOG = 0; FOG < FOG_NODES; FOG++)); do
 done
 echo "All fog nodes started"
 
-# Step 4: Start Leader Server
+# Step 5: Start Leader Server
 echo "Starting Leader Server..."
 nohup python hierleadserver.py &>logs/${DEST_DIRECTORY}/hierleadserver.log &
 echo "Leader server started"
@@ -53,7 +59,7 @@ echo "Leader server started"
 echo "Waiting for infrastructure to initialize..."
 sleep 15
 
-# Step 5: Start Healthcare Facilities
+# Step 6: Start Healthcare Facilities
 echo "Starting Healthcare Facilities..."
 for ((FACILITY = 0; FACILITY < FACILITIES; FACILITY++)); do
   echo "  Starting healthcare facility ${FACILITY}..."
@@ -65,7 +71,7 @@ echo "All healthcare facilities started"
 echo "Waiting for facilities to register with Trusted Authority..."
 sleep 10
 
-# Step 6: Initialize facility registration
+# Step 7: Initialize facility registration
 echo "Registering healthcare facilities with Trusted Authority..."
 for ((FACILITY = 0; FACILITY < FACILITIES; FACILITY++)); do
   FACILITY_PORT=$((9600 + FACILITY))
@@ -78,7 +84,7 @@ done
 echo "Registration requests sent to all facilities"
 sleep 5
 
-# Step 7: Start initial training round
+# Step 8: Start initial training round
 echo "Initializing first training round..."
 
 # Start round on leader server

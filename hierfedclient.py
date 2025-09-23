@@ -6,6 +6,7 @@ import hashlib
 import time
 import secrets
 import json
+import base64
 
 import numpy as np
 import requests
@@ -55,28 +56,31 @@ def solve_proof_of_work(facility_id, target_difficulty):
             print(f"Facility {facility_id} PoW attempt: {nonce}")
 
 # Differential Privacy - Add Gaussian noise to model parameters
-def add_differential_privacy(model_weights, noise_scale):
+def add_differential_privacy(model_weights, hier_config):
     """Add production-grade differential privacy using Gaussian mechanism"""
-    from production_crypto import ProductionDifferentialPrivacy, CryptoConfig
+    if not hier_config.dp_enabled:
+        print("Differential privacy disabled in configuration")
+        return model_weights
+        
+    from production_crypto import ProductionDifferentialPrivacy
     
-    config = CryptoConfig()
     dp = ProductionDifferentialPrivacy()
     
     noisy_weights = []
     for layer_weights in model_weights:
-        # Clip gradients for bounded sensitivity
-        clipped_weights = dp.clip_gradients([layer_weights], max_norm=1.0)[0]
+        # Clip gradients for bounded sensitivity using configured norm
+        clipped_weights = dp.clip_gradients([layer_weights], max_norm=hier_config.dp_clip_norm)[0]
         
-        # Add calibrated Gaussian noise for (ε,δ)-differential privacy
+        # Add calibrated Gaussian noise for (ε,δ)-differential privacy using HierConfig
         noisy_layer = dp.add_gaussian_noise(
             clipped_weights, 
-            config.privacy_epsilon, 
-            config.privacy_delta,
+            hier_config.dp_epsilon, 
+            hier_config.dp_delta,
             sensitivity=1.0
         )
         noisy_weights.append(noisy_layer)
     
-    print(f"Applied production-grade differential privacy (ε={config.privacy_epsilon}, δ={config.privacy_delta})")
+    print(f"Applied production-grade differential privacy (ε={hier_config.dp_epsilon}, δ={hier_config.dp_delta}, clip_norm={hier_config.dp_clip_norm})")
     return noisy_weights
 
 # Production Shamir's Secret Sharing Implementation
@@ -92,12 +96,12 @@ def shamirs_secret_sharing(data, num_shares, threshold):
         shares = ProductionSecretSharing.split_secret(data_bytes, threshold, num_shares)
         print(f"Created {num_shares} cryptographic secret shares with threshold {threshold}")
         
-        # Convert to expected format for compatibility
+        # Convert to expected format for compatibility (with JSON-safe encoding)
         formatted_shares = []
         for i, share in enumerate(shares):
             share_data = {
                 'share_id': i + 1,
-                'share_data': share,
+                'share_data': base64.b64encode(share).decode('utf-8') if isinstance(share, bytes) else share,
                 'threshold': threshold,
                 'total_shares': num_shares,
                 'is_production': True
@@ -201,11 +205,15 @@ def start_next_round(data):
     # Get model weights for sharing
     model_weights = model.get_weights()
     
-    # Apply differential privacy
-    dp_weights = add_differential_privacy(model_weights, config.dp_noise_scale)
+    # Apply differential privacy using HierConfig
+    dp_weights = add_differential_privacy(model_weights, config)
     
-    # Create secret shares using Shamir's Secret Sharing
-    secret_shares = shamirs_secret_sharing(dp_weights, config.num_fog_nodes, config.secret_threshold)
+    # Create secret shares using Shamir's Secret Sharing (if enabled)
+    if config.secret_sharing_enabled:
+        secret_shares = shamirs_secret_sharing(dp_weights, config.secret_num_shares_computed, config.secret_threshold)
+    else:
+        print("Secret sharing disabled in configuration - using model weights directly")
+        secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]
     
     # Send shares to validator committee for verification
     print(f"Sending {len(secret_shares)} secret shares to validator committee...")
