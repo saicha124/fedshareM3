@@ -235,6 +235,10 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/config':
             self.update_config()
+        elif self.path == '/config/dp':
+            self.update_dp_config()
+        elif self.path == '/config/ss':
+            self.update_ss_config()
         else:
             self.send_error(404, "Not Found")
     
@@ -875,6 +879,154 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                     statusDiv.innerHTML = '<div class="config-error">❌ Error loading current configuration</div>';
                 });
         }
+
+        // Differential Privacy Configuration Functions
+        function updateDPConfig(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const dpConfigData = {
+                dp_enabled: formData.get('dp_enabled') === 'true',
+                dp_epsilon: parseFloat(formData.get('dp_epsilon')),
+                dp_delta: parseFloat(formData.get('dp_delta')),
+                dp_clip_norm: parseFloat(formData.get('dp_clip_norm')),
+                dp_noise_multiplier: parseFloat(formData.get('dp_noise_multiplier')),
+                dp_mechanism: formData.get('dp_mechanism')
+            };
+            
+            const submitBtn = event.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '⏳ Updating...';
+            submitBtn.disabled = true;
+            
+            fetch('/config/dp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dpConfigData)
+            })
+            .then(response => response.text())
+            .then(data => {
+                const statusDiv = document.getElementById('dp-config-status');
+                statusDiv.innerHTML = '<div class="config-success">✅ Differential Privacy configuration updated successfully!</div>';
+                setTimeout(() => {
+                    statusDiv.innerHTML = '';
+                }, 5000);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const statusDiv = document.getElementById('dp-config-status');
+                statusDiv.innerHTML = '<div class="config-error">❌ Error updating DP configuration: ' + error + '</div>';
+            })
+            .finally(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        }
+
+        function loadCurrentDPConfig() {
+            fetch('/current_config')
+                .then(response => response.json())
+                .then(config => {
+                    document.getElementById('dp_enabled').value = config.dp_enabled ? 'true' : 'false';
+                    document.getElementById('dp_epsilon').value = config.dp_epsilon || 1.0;
+                    document.getElementById('dp_delta').value = config.dp_delta || 0.00001;
+                    document.getElementById('dp_clip_norm').value = config.dp_clip_norm || 1.0;
+                    document.getElementById('dp_noise_multiplier').value = config.dp_noise_multiplier || 0.1;
+                    document.getElementById('dp_mechanism').value = config.dp_mechanism || 'gaussian';
+                    
+                    const statusDiv = document.getElementById('dp-config-status');
+                    statusDiv.innerHTML = '<div class="config-success">📥 Current DP configuration loaded</div>';
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 3000);
+                })
+                .catch(error => {
+                    console.error('Error loading DP config:', error);
+                    const statusDiv = document.getElementById('dp-config-status');
+                    statusDiv.innerHTML = '<div class="config-error">❌ Error loading DP configuration</div>';
+                });
+        }
+
+        // Secret Sharing Configuration Functions
+        function updateSSConfig(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const ssConfigData = {
+                secret_sharing_enabled: formData.get('secret_sharing_enabled') === 'true',
+                secret_threshold: parseInt(formData.get('secret_threshold')),
+                share_signing_enabled: formData.get('share_signing_enabled') === 'true',
+                hier_facilities: parseInt(formData.get('hier_facilities')),
+                hier_fog_nodes: parseInt(formData.get('hier_fog_nodes')),
+                hier_validators: parseInt(formData.get('hier_validators')),
+                hier_training_rounds: parseInt(formData.get('hier_training_rounds'))
+            };
+            
+            const submitBtn = event.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '⏳ Updating...';
+            submitBtn.disabled = true;
+            
+            fetch('/config/ss', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(ssConfigData)
+            })
+            .then(response => response.text())
+            .then(data => {
+                const statusDiv = document.getElementById('ss-config-status');
+                statusDiv.innerHTML = '<div class="config-success">✅ Secret Sharing configuration updated successfully!</div>';
+                setTimeout(() => {
+                    statusDiv.innerHTML = '';
+                }, 5000);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const statusDiv = document.getElementById('ss-config-status');
+                statusDiv.innerHTML = '<div class="config-error">❌ Error updating SS configuration: ' + error + '</div>';
+            })
+            .finally(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        }
+
+        function loadCurrentSSConfig() {
+            fetch('/current_config')
+                .then(response => response.json())
+                .then(config => {
+                    document.getElementById('secret_sharing_enabled').value = config.secret_sharing_enabled ? 'true' : 'false';
+                    document.getElementById('secret_threshold').value = config.secret_threshold || 2;
+                    document.getElementById('share_signing_enabled').value = config.share_signing_enabled ? 'true' : 'false';
+                    document.getElementById('hier_facilities').value = config.hier_facilities || 4;
+                    document.getElementById('hier_fog_nodes').value = config.hier_fog_nodes || 3;
+                    document.getElementById('hier_validators').value = config.hier_validators || 3;
+                    document.getElementById('hier_training_rounds').value = config.hier_training_rounds || 3;
+                    
+                    updateSecretShares(); // Update the secret shares display
+                    
+                    const statusDiv = document.getElementById('ss-config-status');
+                    statusDiv.innerHTML = '<div class="config-success">📥 Current SS configuration loaded</div>';
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 3000);
+                })
+                .catch(error => {
+                    console.error('Error loading SS config:', error);
+                    const statusDiv = document.getElementById('ss-config-status');
+                    statusDiv.innerHTML = '<div class="config-error">❌ Error loading SS configuration</div>';
+                });
+        }
+
+        function updateSecretShares() {
+            const facilitiesInput = document.getElementById('hier_facilities');
+            const sharesDisplay = document.getElementById('secret_num_shares_display');
+            const facilities = facilitiesInput.value;
+            
+            sharesDisplay.value = `${facilities} (matches facilities)`;
+        }
         
         // Load current config on page load
         window.addEventListener('load', loadCurrentConfig);
@@ -942,6 +1094,110 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                 </div>
             </form>
             <div id="config-status" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="algorithm-section" style="background: linear-gradient(145deg, #fff2e6, #ffffff); border-color: #f39c12;">
+            <div class="algorithm-title">
+                <span class="emoji">🔒</span>Differential Privacy Configuration
+            </div>
+            <div class="algorithm-description">
+                Configure differential privacy parameters for Hierarchical Federated Learning to protect sensitive data.
+            </div>
+            <form id="dp-config-form" onsubmit="updateDPConfig(event)">
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label for="dp_enabled">Enable Differential Privacy:</label>
+                        <select id="dp_enabled" name="dp_enabled">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="dp_epsilon">Privacy Budget (ε):</label>
+                        <input type="number" id="dp_epsilon" name="dp_epsilon" min="0.1" max="10" step="0.1" value="1.0">
+                    </div>
+                    <div class="config-item">
+                        <label for="dp_delta">Privacy Budget (δ):</label>
+                        <input type="number" id="dp_delta" name="dp_delta" min="0.00001" max="0.01" step="0.00001" value="0.00001">
+                    </div>
+                    <div class="config-item">
+                        <label for="dp_clip_norm">Gradient Clipping Norm:</label>
+                        <input type="number" id="dp_clip_norm" name="dp_clip_norm" min="0.1" max="5.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="config-item">
+                        <label for="dp_noise_multiplier">Noise Multiplier (σ):</label>
+                        <input type="number" id="dp_noise_multiplier" name="dp_noise_multiplier" min="0.01" max="1.0" step="0.01" value="0.1">
+                    </div>
+                    <div class="config-item">
+                        <label for="dp_mechanism">DP Mechanism:</label>
+                        <select id="dp_mechanism" name="dp_mechanism">
+                            <option value="gaussian">Gaussian</option>
+                            <option value="laplace">Laplace</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="controls" style="margin-top: 20px;">
+                    <button type="submit" class="btn">🔒 Update DP Configuration</button>
+                    <button type="button" class="btn btn-success" onclick="loadCurrentDPConfig()">🔄 Load Current DP</button>
+                </div>
+            </form>
+            <div id="dp-config-status" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="algorithm-section" style="background: linear-gradient(145deg, #e8f8ff, #ffffff); border-color: #3498db;">
+            <div class="algorithm-title">
+                <span class="emoji">🔐</span>Secret Sharing Configuration
+            </div>
+            <div class="algorithm-description">
+                Configure Shamir's secret sharing parameters for secure model aggregation. Note: Number of shares automatically matches the number of facilities.
+            </div>
+            <form id="ss-config-form" onsubmit="updateSSConfig(event)">
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label for="secret_sharing_enabled">Enable Secret Sharing:</label>
+                        <select id="secret_sharing_enabled" name="secret_sharing_enabled">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="secret_threshold">Reconstruction Threshold:</label>
+                        <input type="number" id="secret_threshold" name="secret_threshold" min="2" max="10" value="2">
+                    </div>
+                    <div class="config-item">
+                        <label for="secret_num_shares_display">Number of Shares:</label>
+                        <input type="text" id="secret_num_shares_display" name="secret_num_shares_display" readonly value="Auto (matches facilities)" style="background: #f8f9fa; color: #6c757d;">
+                    </div>
+                    <div class="config-item">
+                        <label for="share_signing_enabled">Enable Share Signing:</label>
+                        <select id="share_signing_enabled" name="share_signing_enabled">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="hier_facilities">Number of Facilities:</label>
+                        <input type="number" id="hier_facilities" name="hier_facilities" min="2" max="10" value="4" onchange="updateSecretShares()">
+                    </div>
+                    <div class="config-item">
+                        <label for="hier_fog_nodes">Number of Fog Nodes:</label>
+                        <input type="number" id="hier_fog_nodes" name="hier_fog_nodes" min="2" max="5" value="3">
+                    </div>
+                    <div class="config-item">
+                        <label for="hier_validators">Committee Size:</label>
+                        <input type="number" id="hier_validators" name="hier_validators" min="2" max="5" value="3">
+                    </div>
+                    <div class="config-item">
+                        <label for="hier_training_rounds">Hier Training Rounds:</label>
+                        <input type="number" id="hier_training_rounds" name="hier_training_rounds" min="1" max="10" value="3">
+                    </div>
+                </div>
+                <div class="controls" style="margin-top: 20px;">
+                    <button type="submit" class="btn">🔐 Update Secret Sharing</button>
+                    <button type="button" class="btn btn-success" onclick="loadCurrentSSConfig()">🔄 Load Current SS</button>
+                </div>
+            </form>
+            <div id="ss-config-status" style="margin-top: 10px;"></div>
         </div>
 
         <div class="algorithm-section">
@@ -1591,6 +1847,127 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             
         except Exception as e:
             print(f"Error updating config: {str(e)}")
+            self.send_error(500, str(e))
+
+    def update_dp_config(self):
+        """Update differential privacy configuration in config.py"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            dp_config = json.loads(post_data.decode('utf-8'))
+            
+            # Read current config.py
+            with open('config.py', 'r') as f:
+                config_content = f.read()
+            
+            # Update differential privacy configuration values
+            config_content = re.sub(
+                r'dp_enabled = (True|False)',
+                f'dp_enabled = {dp_config["dp_enabled"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'dp_epsilon = [0-9]*\.?[0-9]+',
+                f'dp_epsilon = {dp_config["dp_epsilon"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'dp_delta = [0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?',
+                f'dp_delta = {dp_config["dp_delta"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'dp_clip_norm = [0-9]*\.?[0-9]+',
+                f'dp_clip_norm = {dp_config["dp_clip_norm"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'dp_noise_multiplier = [0-9]*\.?[0-9]+',
+                f'dp_noise_multiplier = {dp_config["dp_noise_multiplier"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r"dp_mechanism = '[^']*'",
+                f"dp_mechanism = '{dp_config['dp_mechanism']}'",
+                config_content
+            )
+            
+            # Write the updated config back
+            with open('config.py', 'w') as f:
+                f.write(config_content)
+            
+            print(f"Differential Privacy configuration updated: {dp_config}")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write("Differential Privacy configuration updated successfully!".encode())
+            
+        except Exception as e:
+            print(f"Error updating DP config: {str(e)}")
+            self.send_error(500, str(e))
+
+    def update_ss_config(self):
+        """Update secret sharing configuration in config.py"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            ss_config = json.loads(post_data.decode('utf-8'))
+            
+            # Read current config.py
+            with open('config.py', 'r') as f:
+                config_content = f.read()
+            
+            # Update secret sharing and hierarchical federated learning configuration values
+            config_content = re.sub(
+                r'secret_sharing_enabled = (True|False)',
+                f'secret_sharing_enabled = {ss_config["secret_sharing_enabled"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'secret_threshold = \d+',
+                f'secret_threshold = {ss_config["secret_threshold"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'share_signing_enabled = (True|False)',
+                f'share_signing_enabled = {ss_config["share_signing_enabled"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'number_of_facilities = \d+',
+                f'number_of_facilities = {ss_config["hier_facilities"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'num_fog_nodes = \d+',
+                f'num_fog_nodes = {ss_config["hier_fog_nodes"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'committee_size = \d+',
+                f'committee_size = {ss_config["hier_validators"]}',
+                config_content
+            )
+            config_content = re.sub(
+                r'hier_training_rounds = \d+',
+                f'hier_training_rounds = {ss_config["hier_training_rounds"]}',
+                config_content
+            )
+            
+            # Write the updated config back
+            with open('config.py', 'w') as f:
+                f.write(config_content)
+            
+            print(f"Secret Sharing configuration updated: {ss_config}")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write("Secret Sharing configuration updated successfully!".encode())
+            
+        except Exception as e:
+            print(f"Error updating SS config: {str(e)}")
             self.send_error(500, str(e))
 
     def reinitialize_all(self):
