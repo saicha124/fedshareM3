@@ -70,7 +70,7 @@ def parse_logs_for_progress(algorithm):
         progress['total_clients'] = total_clients
         progress['total_rounds'] = total_rounds
         
-        # Check healthcare facility logs
+        # Count started facilities
         for i in range(total_clients):
             client_log = f"{log_dir}/hierfedclient-{i}.log"
             if os.path.exists(client_log):
@@ -78,24 +78,8 @@ def parse_logs_for_progress(algorithm):
                 try:
                     with open(client_log, 'r') as f:
                         content = f.read()
-                        
-                    # Extract round information for hierarchical structure
-                    rounds = re.findall(r'Round: (\d+)/(\d+)', content)
-                    if rounds:
-                        latest_round = max([int(r[0]) for r in rounds])
-                        progress['current_round'] = max(progress['current_round'], latest_round)
                     
-                    # Extract facility completion
-                    completed_rounds = content.count('FACILITY] Round')
-                    training_finished = content.count('Training completed')
-                    
-                    if training_finished > 0:
-                        progress['training_progress'] = 100
-                    else:
-                        round_progress = min(100, (completed_rounds / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
-                        progress['training_progress'] = max(progress['training_progress'], round_progress)
-                    
-                    # Extract performance metrics
+                    # Extract performance metrics from facility logs
                     accuracy_matches = re.findall(r'accuracy: ([\d.]+)', content)
                     loss_matches = re.findall(r'loss: ([\d.]+)', content)
                     if accuracy_matches:
@@ -106,17 +90,42 @@ def parse_logs_for_progress(algorithm):
                 except Exception as e:
                     print(f"Error reading facility log {client_log}: {e}")
         
-        # Check fog node and leader server logs for global completion
+        # Use leader server log as the PRIMARY source of truth for progress
         leader_log = f"{log_dir}/hierleadserver.log"
         if os.path.exists(leader_log):
             try:
                 with open(leader_log, 'r') as f:
                     content = f.read()
                 
-                global_aggregations = content.count('LEADER] Round')
-                if global_aggregations >= total_rounds:
+                # Extract current round from leader server log with multiple patterns
+                leader_rounds = re.findall(r'\[LEADER\] Round (\d+)/(\d+)', content)
+                round_patterns = re.findall(r'Round (\d+)/(\d+)', content)
+                global_rounds = re.findall(r'Global round (\d+)/(\d+)', content)
+                
+                # Use any available round pattern
+                all_rounds = leader_rounds + round_patterns + global_rounds
+                if all_rounds:
+                    latest_round = max([int(r[0]) for r in all_rounds])
+                    progress['current_round'] = latest_round
+                    
+                    # Calculate progress based on leader server rounds (0-based to 1-based)
+                    round_progress = min(100, (latest_round / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
+                    progress['training_progress'] = round_progress
+                
+                # Check for training completion
+                if ('Training completed' in content or 
+                    'Model aggregation completed successfully' in content or
+                    f'Round {total_rounds}/' in content):
                     progress['training_progress'] = 100
                     progress['status'] = 'completed'
+                
+                # Extract global performance metrics from leader server
+                global_loss_matches = re.findall(r'📊 Global Test Loss:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', content)
+                global_accuracy_matches = re.findall(r'🎯 Global Test Accuracy:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', content)
+                if global_loss_matches:
+                    progress['metrics']['global_loss'] = float(global_loss_matches[-1])
+                if global_accuracy_matches:
+                    progress['metrics']['global_accuracy'] = float(global_accuracy_matches[-1])
                     
             except Exception as e:
                 print(f"Error reading leader server log: {e}")
@@ -239,6 +248,8 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             self.update_dp_config()
         elif self.path == '/config/ss':
             self.update_ss_config()
+        elif self.path == '/config/hier':
+            self.update_hier_config()
         else:
             self.send_error(404, "Not Found")
     
@@ -1063,102 +1074,70 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
         // Load current config on page load
         window.addEventListener('load', loadCurrentConfig);
         
-        // Differential Privacy Configuration Functions
-        function showDPConfig() {
-            // Load current DP configuration
+        // Hierarchical FL Configuration Functions
+        function showHierConfig() {
+            loadCurrentHierConfig();
+            document.getElementById('hierConfigModal').style.display = 'block';
+        }
+        
+        function closeHierConfig() {
+            document.getElementById('hierConfigModal').style.display = 'none';
+        }
+        
+        function loadCurrentHierConfig() {
             fetch('/current_config')
                 .then(response => response.json())
                 .then(config => {
+                    // Load DP configuration
                     if (config.dp_epsilon) document.getElementById('dp_epsilon').value = config.dp_epsilon;
                     if (config.dp_delta) document.getElementById('dp_delta').value = config.dp_delta;
                     if (config.dp_clip_norm) document.getElementById('dp_clip_norm').value = config.dp_clip_norm;
                     if (config.dp_noise_multiplier) document.getElementById('dp_noise_multiplier').value = config.dp_noise_multiplier;
-                });
-            document.getElementById('dpModal').style.display = 'block';
-        }
-        
-        function closeDPConfig() {
-            document.getElementById('dpModal').style.display = 'none';
-        }
-        
-        function updateDPConfig() {
-            const dpConfig = {
-                dp_epsilon: parseFloat(document.getElementById('dp_epsilon').value),
-                dp_delta: parseFloat(document.getElementById('dp_delta').value),
-                dp_clip_norm: parseFloat(document.getElementById('dp_clip_norm').value),
-                dp_noise_multiplier: parseFloat(document.getElementById('dp_noise_multiplier').value)
-            };
-            
-            fetch('/config/dp', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(dpConfig)
-            })
-            .then(response => response.text())
-            .then(result => {
-                document.getElementById('dp-result').innerHTML = '<div class="config-success">' + result + '</div>';
-                setTimeout(() => {
-                    document.getElementById('dp-result').innerHTML = '';
-                }, 3000);
-            })
-            .catch(error => {
-                document.getElementById('dp-result').innerHTML = '<div class="config-error">Error: ' + error + '</div>';
-            });
-        }
-        
-        // Secret Sharing Configuration Functions
-        function showSSConfig() {
-            // Load current SS configuration
-            fetch('/current_config')
-                .then(response => response.json())
-                .then(config => {
-                    // Fix key mismatch: use hier_fog_nodes from server response
-                    if (config.hier_fog_nodes) document.getElementById('ss_num_shares').value = config.hier_fog_nodes;
+                    
+                    // Load SS configuration - set num_shares to match fog nodes
+                    const fogNodes = config.hier_fog_nodes || config.num_fog_nodes || 3;
+                    document.getElementById('ss_num_shares').value = fogNodes;
                     if (config.secret_threshold) document.getElementById('ss_threshold').value = config.secret_threshold;
                     if (config.share_signing_enabled !== undefined) {
                         document.getElementById('ss_signing').value = config.share_signing_enabled.toString();
                     }
-                });
-            document.getElementById('ssModal').style.display = 'block';
+                })
+                .catch(error => console.error('Error loading Hierarchical FL config:', error));
         }
         
-        function closeSSConfig() {
-            document.getElementById('ssModal').style.display = 'none';
-        }
-        
-        function updateSSConfig() {
-            const ssConfig = {
-                secret_num_shares: parseInt(document.getElementById('ss_num_shares').value),
+        function updateHierConfig() {
+            const hierConfig = {
+                dp_epsilon: parseFloat(document.getElementById('dp_epsilon').value),
+                dp_delta: parseFloat(document.getElementById('dp_delta').value),
+                dp_clip_norm: parseFloat(document.getElementById('dp_clip_norm').value),
+                dp_noise_multiplier: parseFloat(document.getElementById('dp_noise_multiplier').value),
                 secret_threshold: parseInt(document.getElementById('ss_threshold').value),
                 share_signing_enabled: document.getElementById('ss_signing').value === 'true'
             };
             
-            fetch('/config/ss', {
+            fetch('/config/hier', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(ssConfig)
+                body: JSON.stringify(hierConfig)
             })
             .then(response => response.text())
             .then(result => {
-                document.getElementById('ss-result').innerHTML = '<div class="config-success">' + result + '</div>';
+                document.getElementById('hier-config-result').innerHTML = '<div class="config-success">✅ ' + result + '</div>';
                 setTimeout(() => {
-                    document.getElementById('ss-result').innerHTML = '';
+                    document.getElementById('hier-config-result').innerHTML = '';
                 }, 3000);
             })
             .catch(error => {
-                document.getElementById('ss-result').innerHTML = '<div class="config-error">Error: ' + error + '</div>';
+                document.getElementById('hier-config-result').innerHTML = '<div class="config-error">❌ Error: ' + error + '</div>';
             });
         }
         
+        
         // Close modals when clicking outside
         window.onclick = function(event) {
-            const dpModal = document.getElementById('dpModal');
-            const ssModal = document.getElementById('ssModal');
-            if (event.target == dpModal) {
-                dpModal.style.display = 'none';
-            }
-            if (event.target == ssModal) {
-                ssModal.style.display = 'none';
+            const hierConfigModal = document.getElementById('hierConfigModal');
+            if (event.target == hierConfigModal) {
+                hierConfigModal.style.display = 'none';
             }
         }
         
@@ -1411,8 +1390,7 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             </div>
             <div class="controls">
                 <button id="hierfed-run-btn" class="btn" onclick="runAlgorithm('hierfed')">Run Hierarchical FL</button>
-                <button class="btn" style="background: linear-gradient(145deg, #8e44ad, #9b59b6);" onclick="showDPConfig()">Differential Privacy Config</button>
-                <button class="btn" style="background: linear-gradient(145deg, #16a085, #1abc9c);" onclick="showSSConfig()">Secret Sharing Config</button>
+                <button class="btn" style="background: linear-gradient(145deg, #8e44ad, #9b59b6);" onclick="showHierConfig()">⚙️ Config</button>
                 <a href="/logs/hierfed" class="btn btn-success">View Logs</a>
             </div>
             <div id="hierfed-progress" class="progress-container">
@@ -1426,102 +1404,65 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             </div>
         </div>
 
-        <!-- Differential Privacy Configuration Modal -->
-        <div id="dpModal" class="modal" style="display: none;">
+        <!-- Hierarchical FL Configuration Modal -->
+        <div id="hierConfigModal" class="modal" style="display: none;">
             <div class="modal-content">
-                <span class="close" onclick="closeDPConfig()">&times;</span>
-                <h2>🔒 Differential Privacy Configuration</h2>
-                <p><strong>Configure privacy parameters for Hierarchical Federated Learning</strong></p>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label>Privacy Budget (Epsilon ε):</label>
-                        <input type="number" id="dp_epsilon" value="1.0" step="0.1" min="0.1" max="10.0">
-                    </div>
-                    <div class="config-item">
-                        <label>Delta (δ):</label>
-                        <input type="number" id="dp_delta" value="1e-5" step="1e-6" min="1e-10" max="1e-3">
-                    </div>
-                    <div class="config-item">
-                        <label>Clipping Norm:</label>
-                        <input type="number" id="dp_clip_norm" value="1.0" step="0.1" min="0.1" max="5.0">
-                    </div>
-                    <div class="config-item">
-                        <label>Noise Multiplier:</label>
-                        <input type="number" id="dp_noise_multiplier" value="0.1" step="0.01" min="0.01" max="1.0">
+                <span class="close" onclick="closeHierConfig()">&times;</span>
+                <h2>⚙️ Hierarchical FL Configuration</h2>
+                <p><strong>Configure security parameters for Hierarchical Federated Learning</strong></p>
+                
+                <div style="margin-bottom: 25px;">
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">🔒 Differential Privacy Settings</h3>
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <label>Privacy Budget (Epsilon ε):</label>
+                            <input type="number" id="dp_epsilon" value="1.0" step="0.1" min="0.1" max="10.0">
+                        </div>
+                        <div class="config-item">
+                            <label>Delta (δ):</label>
+                            <input type="number" id="dp_delta" value="1e-5" step="1e-6" min="1e-10" max="1e-3">
+                        </div>
+                        <div class="config-item">
+                            <label>Clipping Norm:</label>
+                            <input type="number" id="dp_clip_norm" value="1.0" step="0.1" min="0.1" max="5.0">
+                        </div>
+                        <div class="config-item">
+                            <label>Noise Multiplier:</label>
+                            <input type="number" id="dp_noise_multiplier" value="0.1" step="0.01" min="0.01" max="1.0">
+                        </div>
                     </div>
                 </div>
-                <button class="btn" onclick="updateDPConfig()">🔒 Update Configuration</button>
-                <div id="dp-result"></div>
-            </div>
-        </div>
-            <div class="modal-content">
-                <span class="close" onclick="closeDPConfig()">&times;</span>
-                <h2>Differential Privacy Configuration</h2>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label>Privacy Budget (Epsilon ε):</label>
-                        <input type="number" id="dp_epsilon" value="1.0" step="0.1" min="0.1">
-                    </div>
-                    <div class="config-item">
-                        <label>Delta (δ):</label>
-                        <input type="number" id="dp_delta" value="1e-5" step="1e-6" min="1e-10">
-                    </div>
-                    <div class="config-item">
-                        <label>Clipping Norm:</label>
-                        <input type="number" id="dp_clip_norm" value="1.0" step="0.1" min="0.1">
-                    </div>
-                    <div class="config-item">
-                        <label>Noise Multiplier:</label>
-                        <input type="number" id="dp_noise_multiplier" value="0.1" step="0.01" min="0.01">
+                
+                <div style="margin-bottom: 25px;">
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">🔐 Secret Sharing Settings</h3>
+                    <p><strong>Note:</strong> Shares are distributed according to the number of fog nodes for secure aggregation.</p>
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <label>Number of Fog Nodes (Shares):</label>
+                            <input type="number" id="ss_num_shares" value="3" min="2" max="10" readonly>
+                            <small>Automatically set to match fog nodes configuration</small>
+                        </div>
+                        <div class="config-item">
+                            <label>Threshold (Min shares to reconstruct):</label>
+                            <input type="number" id="ss_threshold" value="2" min="2" max="5">
+                        </div>
+                        <div class="config-item">
+                            <label>Enable Cryptographic Signatures:</label>
+                            <select id="ss_signing">
+                                <option value="true" selected>Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
-                <button class="btn" onclick="updateDPConfig()">Update Configuration</button>
-                <div id="dp-result"></div>
-            </div>
-        </div>
-
-        <!-- Secret Sharing Configuration Modal -->
-        <div id="ssModal" class="modal" style="display: none;">
-            <div class="modal-content">
-                <span class="close" onclick="closeSSConfig()">&times;</span>
-                <h2>🔐 Secret Sharing Configuration</h2>
-                <p><strong>Note:</strong> Each facility divides weights according to the number of fog nodes.</p>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label>Number of Fog Nodes (Shares):</label>
-                        <input type="number" id="ss_num_shares" value="3" min="2" max="10" readonly>
-                        <small>Automatically set to match fog nodes configuration</small>
-                    </div>
-                    <div class="config-item">
-                        <label>Threshold (Min shares to reconstruct):</label>
-                        <input type="number" id="ss_threshold" value="2" min="2" max="5">
-                    </div>
-                    <div class="config-item">
-                        <label>Enable Cryptographic Signatures:</label>
-                        <select id="ss_signing">
-                            <option value="true" selected>Yes</option>
-                            <option value="false">No</option>
-                        </select>
-                    </div>
+                
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button class="btn" onclick="updateHierConfig()">💾 Save Configuration</button>
+                    <button class="btn" style="background: linear-gradient(145deg, #95a5a6, #7f8c8d);" onclick="loadCurrentHierConfig()">🔄 Load Current</button>
                 </div>
-                <button class="btn" onclick="updateSSConfig()">🔐 Update Configuration</button>
-                <div id="ss-result"></div>
+                <div id="hier-config-result"></div>
             </div>
         </div>
-            <div class="modal-content">
-                <span class="close" onclick="closeSSConfig()">&times;</span>
-                <h2>Secret Sharing Configuration</h2>
-                <p><strong>Note:</strong> Each facility divides weights according to the number of fog nodes.</p>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label>Number of Fog Nodes (Shares):</label>
-                        <input type="number" id="ss_num_shares" value="3" min="2" max="10" readonly>
-                        <small>Automatically set to match fog nodes configuration</small>
-                    </div>
-                    <div class="config-item">
-                        <label>Threshold (Min shares to reconstruct):</label>
-                        <input type="number" id="ss_threshold" value="2" min="2" max="5">
-                    </div>
                     <div class="config-item">
                         <label>Enable Cryptographic Signatures:</label>
                         <select id="ss_signing">
@@ -2210,6 +2151,67 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             
         except Exception as e:
             print(f"Error updating SS config: {str(e)}")
+            self.send_error(500, str(e))
+
+    def update_hier_config(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        try:
+            # Update config.py file with new hierarchical FL values
+            config_content = open('config.py', 'r').read()
+            
+            # Update DP parameters
+            dp_updates = {
+                'dp_epsilon': data.get('dp_epsilon'),
+                'dp_delta': data.get('dp_delta'), 
+                'dp_clip_norm': data.get('dp_clip_norm'),
+                'dp_noise_multiplier': data.get('dp_noise_multiplier')
+            }
+            
+            for param, value in dp_updates.items():
+                if value is not None:
+                    config_content = re.sub(
+                        f'{param} = [\\d\\.e\\-\\+]+',
+                        f'{param} = {value}',
+                        config_content
+                    )
+            
+            # Update SS parameters
+            if data.get('secret_threshold') is not None:
+                config_content = re.sub(
+                    r'secret_threshold = \d+',
+                    f'secret_threshold = {data["secret_threshold"]}',
+                    config_content
+                )
+            
+            if data.get('share_signing_enabled') is not None:
+                config_content = re.sub(
+                    r'share_signing_enabled = (True|False)',
+                    f'share_signing_enabled = {data["share_signing_enabled"]}',
+                    config_content
+                )
+            
+            # Write updated config back
+            with open('config.py', 'w') as f:
+                f.write(config_content)
+            
+            # Reload config module
+            import importlib
+            import config
+            importlib.reload(config)
+            
+            hier_config_update = {k: v for k, v in data.items() if v is not None}
+            print(f"Hierarchical FL configuration updated: {hier_config_update}")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write("Hierarchical FL configuration updated successfully!".encode())
+            
+        except Exception as e:
+            print(f"Error updating Hierarchical FL config: {str(e)}")
             self.send_error(500, str(e))
 
     def reinitialize_all(self):
