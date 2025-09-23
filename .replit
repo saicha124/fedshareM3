@@ -99,4 +99,4 @@ externalPort = 8081
 
 [deployment]
 deploymentTarget = "vm"
-run = ["python", "-u", "enhanced_app.py"]
+run = ["python", "enhanced_app.py"]
