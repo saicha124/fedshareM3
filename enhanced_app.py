@@ -601,6 +601,38 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             border-radius: 6px;
             margin-top: 10px;
         }
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: none;
+            border-radius: 15px;
+            width: 80%;
+            max-width: 600px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover,
+        .close:focus {
+            color: #000;
+            text-decoration: none;
+        }
     </style>
     <script>
         let updateIntervals = {};
@@ -1031,6 +1063,105 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
         // Load current config on page load
         window.addEventListener('load', loadCurrentConfig);
         
+        // Differential Privacy Configuration Functions
+        function showDPConfig() {
+            // Load current DP configuration
+            fetch('/current_config')
+                .then(response => response.json())
+                .then(config => {
+                    if (config.dp_epsilon) document.getElementById('dp_epsilon').value = config.dp_epsilon;
+                    if (config.dp_delta) document.getElementById('dp_delta').value = config.dp_delta;
+                    if (config.dp_clip_norm) document.getElementById('dp_clip_norm').value = config.dp_clip_norm;
+                    if (config.dp_noise_multiplier) document.getElementById('dp_noise_multiplier').value = config.dp_noise_multiplier;
+                });
+            document.getElementById('dpModal').style.display = 'block';
+        }
+        
+        function closeDPConfig() {
+            document.getElementById('dpModal').style.display = 'none';
+        }
+        
+        function updateDPConfig() {
+            const dpConfig = {
+                dp_epsilon: parseFloat(document.getElementById('dp_epsilon').value),
+                dp_delta: parseFloat(document.getElementById('dp_delta').value),
+                dp_clip_norm: parseFloat(document.getElementById('dp_clip_norm').value),
+                dp_noise_multiplier: parseFloat(document.getElementById('dp_noise_multiplier').value)
+            };
+            
+            fetch('/config/dp', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(dpConfig)
+            })
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('dp-result').innerHTML = '<div class="config-success">' + result + '</div>';
+                setTimeout(() => {
+                    document.getElementById('dp-result').innerHTML = '';
+                }, 3000);
+            })
+            .catch(error => {
+                document.getElementById('dp-result').innerHTML = '<div class="config-error">Error: ' + error + '</div>';
+            });
+        }
+        
+        // Secret Sharing Configuration Functions
+        function showSSConfig() {
+            // Load current SS configuration
+            fetch('/current_config')
+                .then(response => response.json())
+                .then(config => {
+                    // Fix key mismatch: use hier_fog_nodes from server response
+                    if (config.hier_fog_nodes) document.getElementById('ss_num_shares').value = config.hier_fog_nodes;
+                    if (config.secret_threshold) document.getElementById('ss_threshold').value = config.secret_threshold;
+                    if (config.share_signing_enabled !== undefined) {
+                        document.getElementById('ss_signing').value = config.share_signing_enabled.toString();
+                    }
+                });
+            document.getElementById('ssModal').style.display = 'block';
+        }
+        
+        function closeSSConfig() {
+            document.getElementById('ssModal').style.display = 'none';
+        }
+        
+        function updateSSConfig() {
+            const ssConfig = {
+                secret_num_shares: parseInt(document.getElementById('ss_num_shares').value),
+                secret_threshold: parseInt(document.getElementById('ss_threshold').value),
+                share_signing_enabled: document.getElementById('ss_signing').value === 'true'
+            };
+            
+            fetch('/config/ss', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(ssConfig)
+            })
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('ss-result').innerHTML = '<div class="config-success">' + result + '</div>';
+                setTimeout(() => {
+                    document.getElementById('ss-result').innerHTML = '';
+                }, 3000);
+            })
+            .catch(error => {
+                document.getElementById('ss-result').innerHTML = '<div class="config-error">Error: ' + error + '</div>';
+            });
+        }
+        
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const dpModal = document.getElementById('dpModal');
+            const ssModal = document.getElementById('ssModal');
+            if (event.target == dpModal) {
+                dpModal.style.display = 'none';
+            }
+            if (event.target == ssModal) {
+                ssModal.style.display = 'none';
+            }
+        }
+        
         // Removed automatic page refresh to prevent interrupting training progress
     </script>
 </head>
@@ -1280,6 +1411,8 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             </div>
             <div class="controls">
                 <button id="hierfed-run-btn" class="btn" onclick="runAlgorithm('hierfed')">Run Hierarchical FL</button>
+                <button class="btn" style="background: linear-gradient(145deg, #8e44ad, #9b59b6);" onclick="showDPConfig()">Differential Privacy Config</button>
+                <button class="btn" style="background: linear-gradient(145deg, #16a085, #1abc9c);" onclick="showSSConfig()">Secret Sharing Config</button>
                 <a href="/logs/hierfed" class="btn btn-success">View Logs</a>
             </div>
             <div id="hierfed-progress" class="progress-container">
@@ -1290,6 +1423,115 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
                 </div>
                 <div id="hierfed-status"></div>
                 <div id="hierfed-metrics"></div>
+            </div>
+        </div>
+
+        <!-- Differential Privacy Configuration Modal -->
+        <div id="dpModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close" onclick="closeDPConfig()">&times;</span>
+                <h2>🔒 Differential Privacy Configuration</h2>
+                <p><strong>Configure privacy parameters for Hierarchical Federated Learning</strong></p>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Privacy Budget (Epsilon ε):</label>
+                        <input type="number" id="dp_epsilon" value="1.0" step="0.1" min="0.1" max="10.0">
+                    </div>
+                    <div class="config-item">
+                        <label>Delta (δ):</label>
+                        <input type="number" id="dp_delta" value="1e-5" step="1e-6" min="1e-10" max="1e-3">
+                    </div>
+                    <div class="config-item">
+                        <label>Clipping Norm:</label>
+                        <input type="number" id="dp_clip_norm" value="1.0" step="0.1" min="0.1" max="5.0">
+                    </div>
+                    <div class="config-item">
+                        <label>Noise Multiplier:</label>
+                        <input type="number" id="dp_noise_multiplier" value="0.1" step="0.01" min="0.01" max="1.0">
+                    </div>
+                </div>
+                <button class="btn" onclick="updateDPConfig()">🔒 Update Configuration</button>
+                <div id="dp-result"></div>
+            </div>
+        </div>
+            <div class="modal-content">
+                <span class="close" onclick="closeDPConfig()">&times;</span>
+                <h2>Differential Privacy Configuration</h2>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Privacy Budget (Epsilon ε):</label>
+                        <input type="number" id="dp_epsilon" value="1.0" step="0.1" min="0.1">
+                    </div>
+                    <div class="config-item">
+                        <label>Delta (δ):</label>
+                        <input type="number" id="dp_delta" value="1e-5" step="1e-6" min="1e-10">
+                    </div>
+                    <div class="config-item">
+                        <label>Clipping Norm:</label>
+                        <input type="number" id="dp_clip_norm" value="1.0" step="0.1" min="0.1">
+                    </div>
+                    <div class="config-item">
+                        <label>Noise Multiplier:</label>
+                        <input type="number" id="dp_noise_multiplier" value="0.1" step="0.01" min="0.01">
+                    </div>
+                </div>
+                <button class="btn" onclick="updateDPConfig()">Update Configuration</button>
+                <div id="dp-result"></div>
+            </div>
+        </div>
+
+        <!-- Secret Sharing Configuration Modal -->
+        <div id="ssModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close" onclick="closeSSConfig()">&times;</span>
+                <h2>🔐 Secret Sharing Configuration</h2>
+                <p><strong>Note:</strong> Each facility divides weights according to the number of fog nodes.</p>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Number of Fog Nodes (Shares):</label>
+                        <input type="number" id="ss_num_shares" value="3" min="2" max="10" readonly>
+                        <small>Automatically set to match fog nodes configuration</small>
+                    </div>
+                    <div class="config-item">
+                        <label>Threshold (Min shares to reconstruct):</label>
+                        <input type="number" id="ss_threshold" value="2" min="2" max="5">
+                    </div>
+                    <div class="config-item">
+                        <label>Enable Cryptographic Signatures:</label>
+                        <select id="ss_signing">
+                            <option value="true" selected>Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn" onclick="updateSSConfig()">🔐 Update Configuration</button>
+                <div id="ss-result"></div>
+            </div>
+        </div>
+            <div class="modal-content">
+                <span class="close" onclick="closeSSConfig()">&times;</span>
+                <h2>Secret Sharing Configuration</h2>
+                <p><strong>Note:</strong> Each facility divides weights according to the number of fog nodes.</p>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <label>Number of Fog Nodes (Shares):</label>
+                        <input type="number" id="ss_num_shares" value="3" min="2" max="10" readonly>
+                        <small>Automatically set to match fog nodes configuration</small>
+                    </div>
+                    <div class="config-item">
+                        <label>Threshold (Min shares to reconstruct):</label>
+                        <input type="number" id="ss_threshold" value="2" min="2" max="5">
+                    </div>
+                    <div class="config-item">
+                        <label>Enable Cryptographic Signatures:</label>
+                        <select id="ss_signing">
+                            <option value="true" selected>Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn" onclick="updateSSConfig()">Update Configuration</button>
+                <div id="ss-result"></div>
             </div>
         </div>
 
