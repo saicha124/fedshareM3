@@ -125,16 +125,30 @@ def parse_logs_for_progress(algorithm):
                     latest_round, current_total_rounds = latest_round_info
                     progress['current_round'] = latest_round
                     
-                    # Calculate progress using current config total, not potentially stale log data
-                    round_progress = min(100, (latest_round / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
-                    progress['training_progress'] = round_progress
+                    # Fix: Account for 1-based round counting in federated learning
+                    # Round 1/3 should show as starting round 1 (33%), not completing 33%
+                    # For proper progress: Round 1 starting = 0-33%, Round 1 complete = 33%
+                    if latest_round > 0:
+                        # Calculate as: (completed_rounds / total_rounds) * 100
+                        # Since we're in round X, we've completed X-1 rounds
+                        completed_rounds = latest_round - 1
+                        round_progress = min(100, (completed_rounds / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
+                        # Add some progress within current round (5-15% depending on training stage)
+                        if completed_rounds < total_rounds:
+                            round_progress += min(15, (100 / total_rounds) * 0.3)  # Add 30% of one round as in-progress
+                    else:
+                        round_progress = 0
+                    progress['training_progress'] = min(100, round_progress)
                 elif latest_initialized:
                     # Handle the "initialized new training round X" pattern (use only the most recent)
                     progress['current_round'] = latest_initialized
                     
-                    # More stable progress calculation - start at small percentage for initiated rounds
-                    base_progress = ((latest_initialized - 1) / max(1, total_rounds)) * 100
-                    round_progress = min(100, base_progress + 5) if total_rounds > 0 else 5  # Start at 5% when round begins
+                    # Fix: Consistent progress calculation for initialization
+                    # When round X is initialized, we've completed X-1 rounds
+                    completed_rounds = latest_initialized - 1
+                    base_progress = (completed_rounds / max(1, total_rounds)) * 100 if total_rounds > 0 else 0
+                    # Add small progress to indicate round has started (2-5%)
+                    round_progress = min(100, base_progress + 3) if total_rounds > 0 else 3
                     progress['training_progress'] = round_progress
                 
                 # Determine training status based on content
