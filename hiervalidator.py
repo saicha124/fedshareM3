@@ -293,6 +293,21 @@ def receive_vote():
         
         print(f"Received vote {vote} from validator {voter_id} for share {share_id}")
         
+        # If this validator hasn't voted yet, validate the share and cast own vote
+        current_validator_id = config.validator_index
+        if current_validator_id not in vote_records[share_id] and 'share_data' in vote_data:
+            share_request = vote_data['share_data']
+            facility_id = share_request['facility_id']
+            share_data = share_request['share']
+            signature = share_request['signature']
+            facility_public_key = share_request['public_key']
+            
+            # Cast our own vote on this share
+            own_vote = cast_vote(share_id, facility_id, share_data, signature, facility_public_key)
+            vote_records[share_id][current_validator_id] = own_vote
+            
+            print(f"Validator {current_validator_id} cast vote {own_vote} for share {share_id}")
+        
         # Check if we have consensus
         consensus_reached, approve_votes = check_consensus(share_id)
         
