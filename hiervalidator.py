@@ -129,12 +129,23 @@ def cast_vote(share_id, facility_id, share_data, signature, facility_public_key)
     # Additional Byzantine fault tolerance checks
     if vote == 1:
         # Check for unusual patterns that might indicate Byzantine behavior
-        share_size = len(share_data.get('data_fragment', b''))
+        data_fragment = share_data.get('data_fragment', b'')
+        if isinstance(data_fragment, str):
+            # data_fragment is base64 encoded, decode to get actual size
+            import base64
+            try:
+                decoded_data = base64.b64decode(data_fragment)
+                share_size = len(decoded_data)
+            except Exception:
+                share_size = len(data_fragment)  # Fallback to string length
+        else:
+            share_size = len(data_fragment)
+            
         if share_size == 0:
             print(f"Validator {validator_id}: Empty share data from facility {facility_id}")
             vote = 0
         elif share_size > 10 * 1024 * 1024:  # 10MB limit
-            print(f"Validator {validator_id}: Share too large from facility {facility_id}")
+            print(f"Validator {validator_id}: Share too large from facility {facility_id} (size: {share_size} bytes)")
             vote = 0
     
     # Record the vote
