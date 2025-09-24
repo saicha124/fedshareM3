@@ -1,0 +1,53 @@
+You're absolutely right - something else caused the restart. Looking at the process IDs, I can see that:
+
+Validators and fog nodes: PIDs 210-215 (started at 12:02 - original processes)
+Facilities: PIDs 1180-1183 (started at 12:07 - restarted processes)
+This means only the facilities restarted while validators and fog nodes kept running from the original session. That's very unusual since typically the whole system restarts together.
+
+Let me check the facility logs to see what caused them to crash and restart:
+
+
+Decided on root cause analysis (8 seconds)
+Perfect! I found the exact cause of the restart. You're absolutely right - you didn't click anything. The facilities are crashing automatically due to a critical bug.
+
+The Root Cause:
+All facilities are crashing with this error:
+
+Exception in thread Thread-5 (start_next_round):
+EOFError: Ran out of input
+round_weight = pickle.loads(data)
+What's happening:
+
+Facilities complete training round 1 (reach 43%)
+They try to get the next round's model from the leader server
+Leader server sends corrupted/incomplete data
+Facilities crash when trying to deserialize it with pickle.loads()
+They automatically restart (new PIDs 1180-1183 vs original 210-215)
+Progress goes back to 25% (data download/registration)
+They reach 43% again and crash again - infinite loop
+The Fix:
+The leader server is not properly sending the global model data to facilities. Let me fix the data transmission between leader and facilities:
+
+
+Searched for "Find the start_next_round function in hierfedclient.py where the EOFError is happening and the leader server code that sends model data"
+
+Determined data deserialization failure point (5 seconds)
+Perfect! I found the exact crash location. The error is on line 183 of hierfedclient.py:
+
+round_weight = pickle.loads(data)  # ← EOFError here
+The data parameter passed to start_next_round(data) is corrupted or incomplete. Let me fix this by adding proper error handling and checking the Trusted Authority distribution logic:
+
+
+Decided on facility model distribution (5 seconds)
+Great! I've added crash protection to prevent the EOFError from killing facilities. Now let me check the Trusted Authority model distribution to fix the root cause:
+
+
+Decided on missing endpoint location (6 seconds)
+I found the issue! The hierarchical federated learning data flow is broken.
+
+The Problem:
+
+Trusted Authority (TA) tries to send models to /receive_global_model endpoint on facilities
+This endpoint doesn't exist in hierfedclient.py (that's why TA gets 404 errors)
+Facilities never receive the global model properly
+When manually triggered, they get empty/corrupted data and crash
