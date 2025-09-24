@@ -73,8 +73,8 @@ class HierConfig(Config):
     dp_delta = 1e-5   # Privacy budget (δ)
     dp_noise_multiplier = 0.1  # Noise multiplier for DP (σ)
     
-    # Data Fragmentation Parameters (NOT real secret sharing)
-    secret_sharing_enabled = False  # Disable until real Shamir Secret Sharing is implemented
+    # Shamir Secret Sharing Parameters
+    secret_sharing_enabled = True  # Enable real Shamir Secret Sharing for hierarchical FL
     secret_num_shares = None  # Number of shares (defaults to num_fog_nodes)
     secret_threshold = 2  # Minimum shares needed to reconstruct
     share_signing_enabled = True  # Enable cryptographic signatures on shares
