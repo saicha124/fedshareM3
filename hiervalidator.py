@@ -198,14 +198,10 @@ def sign_committee_approval(share_data):
     return signature
 
 def broadcast_to_fog_nodes(approved_share_data):
-    """Broadcast approved share to appropriate fog node"""
+    """Broadcast approved share to ALL fog nodes"""
     share_data = approved_share_data['share']
     facility_id = approved_share_data['facility_id']
     share_id = share_data['share_id']
-    
-    # Determine which fog node should receive this share (use numeric routing)
-    fog_node_index = (share_id - 1) % config.num_fog_nodes
-    fog_node_port = config.fog_node_base_port + fog_node_index
     
     # Add committee signature
     committee_signed_share = {
@@ -217,20 +213,27 @@ def broadcast_to_fog_nodes(approved_share_data):
         'validator_id': config.validator_index
     }
     
-    try:
-        url = f"http://{config.server_address}:{fog_node_port}/receive_share"
-        response = requests.post(url, json=committee_signed_share, timeout=30)
+    successful_broadcasts = 0
+    
+    # Send the approved share to ALL fog nodes (each needs all fragments)
+    for fog_node_index in range(config.num_fog_nodes):
+        fog_node_port = config.fog_node_base_port + fog_node_index
         
-        if response.status_code == 200:
-            print(f"Successfully broadcast approved share to fog node {fog_node_index}")
-            return True
-        else:
-            print(f"Failed to broadcast to fog node {fog_node_index}: {response.status_code}")
-            return False
+        try:
+            url = f"http://{config.server_address}:{fog_node_port}/receive_share"
+            response = requests.post(url, json=committee_signed_share, timeout=30)
             
-    except requests.RequestException as e:
-        print(f"Network error broadcasting to fog node {fog_node_index}: {e}")
-        return False
+            if response.status_code == 200:
+                print(f"Successfully broadcast approved share to fog node {fog_node_index}")
+                successful_broadcasts += 1
+            else:
+                print(f"Failed to broadcast to fog node {fog_node_index}: {response.status_code}")
+                
+        except requests.RequestException as e:
+            print(f"Network error broadcasting to fog node {fog_node_index}: {e}")
+    
+    print(f"Share broadcast to {successful_broadcasts}/{config.num_fog_nodes} fog nodes")
+    return successful_broadcasts > 0
 
 @api.route('/', methods=['GET'])
 def health_check():

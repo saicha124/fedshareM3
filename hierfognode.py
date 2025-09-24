@@ -43,15 +43,16 @@ def reconstruct_secret_shares(shares_by_facility):
     # Simplified reconstruction - in production use proper Shamir's Secret Sharing
     facility_models = {}
     
-    for facility_id, facility_shares in shares_by_facility.items():
-        print(f"Reconstructing facility {facility_id} from {len(facility_shares)} fragments")
+    for facility_id, facility_shares_dict in shares_by_facility.items():
+        print(f"Reconstructing facility {facility_id} from {len(facility_shares_dict)} unique fragments")
         
-        # Sort fragments by share_id for deterministic concatenation
-        facility_shares.sort(key=lambda x: x['share'].get('share_id', 0))
+        # Convert dict to sorted list by share_id for deterministic concatenation
+        share_ids = sorted(facility_shares_dict.keys())
         
         # Combine all fragments for this facility
         reconstructed_data = b''
-        for share_info in facility_shares:
+        for share_id in share_ids:
+            share_info = facility_shares_dict[share_id]
             share_data = share_info['share']
             
             if 'data_fragment' in share_data:
@@ -221,14 +222,19 @@ def receive_share():
         # Store the verified share
         received_shares.append(share_data)
         
-        # Track shares by facility
+        # Track shares by facility, deduplicating based on share_id
         facility_id = share_data.get('facility_id')
+        share_id = share_data.get('share', {}).get('share_id')
+        
         if facility_id not in shares_by_facility:
-            shares_by_facility[facility_id] = []
-        shares_by_facility[facility_id].append(share_data)
+            shares_by_facility[facility_id] = {}
+        
+        # Only store the first copy of each fragment (ignore duplicates from other validators)
+        if share_id not in shares_by_facility[facility_id]:
+            shares_by_facility[facility_id][share_id] = share_data
         
         print(f"Fog node {config.fog_node_index} received share from facility {facility_id}")
-        print(f"Facility {facility_id} has {len(shares_by_facility[facility_id])}/{config.secret_num_shares_computed} fragments")
+        print(f"Facility {facility_id} has {len(shares_by_facility[facility_id])}/{config.secret_num_shares_computed} unique fragments")
         
         # Check if we have all required fragments from all facilities
         all_facilities_ready = True
