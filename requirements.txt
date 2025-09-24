@@ -17,3 +17,13 @@ scikit-learn
 scikit-learn>=1.0.0
 tensorflow
 tensorflow>=2.15.0
+cryptography
+emnist
+flask
+keras
+numpy
+pandas
+requests
+requests-toolbelt
+scikit-learn
+tensorflow
