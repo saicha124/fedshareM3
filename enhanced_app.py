@@ -70,7 +70,10 @@ def parse_logs_for_progress(algorithm):
         progress['total_clients'] = total_clients
         progress['total_rounds'] = total_rounds
         
-        # Count started facilities
+        # Count facility completions and extract performance metrics
+        facilities_completed_current_round = 0
+        max_round_seen = 0
+        
         for i in range(total_clients):
             client_log = f"{log_dir}/hierfedclient-{i}.log"
             if os.path.exists(client_log):
@@ -78,6 +81,15 @@ def parse_logs_for_progress(algorithm):
                 try:
                     with open(client_log, 'r') as f:
                         content = f.read()
+                    
+                    # Count how many rounds this facility has completed
+                    facility_completed_rounds = content.count('[FACILITY] Round')
+                    if facility_completed_rounds > 0:
+                        max_round_seen = max(max_round_seen, facility_completed_rounds)
+                        
+                        # Check if this facility completed the current round
+                        if f'[FACILITY] Round {max_round_seen} completed' in content:
+                            facilities_completed_current_round += 1
                     
                     # Extract performance metrics from facility logs
                     accuracy_matches = re.findall(r'accuracy: ([\d.]+)', content)
@@ -90,88 +102,65 @@ def parse_logs_for_progress(algorithm):
                 except Exception as e:
                     print(f"Error reading facility log {client_log}: {e}")
         
-        # Use leader server log as the PRIMARY source of truth for progress
+        # Calculate progress based on facility completions
+        if max_round_seen > 0:
+            progress['current_round'] = max_round_seen
+            
+            # Calculate progress within the current round based on facility completions
+            # Each round: 0% -> facilities start, 100% -> all facilities complete
+            completed_full_rounds = max_round_seen - 1  # Rounds that are completely finished
+            current_round_progress = (facilities_completed_current_round / total_clients) if total_clients > 0 else 0
+            
+            # Overall progress calculation
+            if completed_full_rounds > 0:
+                base_progress = (completed_full_rounds / total_rounds) * 100
+            else:
+                base_progress = 0
+                
+            # Add progress from current round
+            current_round_weight = (1 / total_rounds) * 100
+            round_progress = base_progress + (current_round_progress * current_round_weight)
+            
+            progress['training_progress'] = min(100, round_progress)
+            progress['status'] = 'training'
+            
+            # If all facilities completed the final round, mark as completed
+            if max_round_seen >= total_rounds and facilities_completed_current_round == total_clients:
+                progress['training_progress'] = 100
+                progress['status'] = 'completed'
+        else:
+            # Check if training has started by looking for initialization
+            leader_log = f"{log_dir}/hierleadserver.log"
+            if os.path.exists(leader_log):
+                try:
+                    with open(leader_log, 'r') as f:
+                        leader_content = f.read()
+                    
+                    if 'Leader server initialized new training round' in leader_content:
+                        init_match = re.search(r'Leader server initialized new training round (\d+)', leader_content)
+                        if init_match:
+                            progress['current_round'] = int(init_match.group(1))
+                            progress['training_progress'] = 5  # Small initial progress
+                            progress['status'] = 'starting'
+                except Exception as e:
+                    print(f"Error reading leader server log: {e}")
+        
+        # Extract global performance metrics from leader server if available
         leader_log = f"{log_dir}/hierleadserver.log"
         if os.path.exists(leader_log):
             try:
                 with open(leader_log, 'r') as f:
-                    content = f.read()
+                    leader_content = f.read()
                 
-                # Parse log line by line to find the chronologically last round pattern
-                lines = content.split('\n')
-                latest_round_info = None
-                latest_initialized = None
-                
-                # Parse each line to find the most recent round information
-                for line in lines:
-                    # Check for round patterns in chronological order
-                    leader_match = re.search(r'\[LEADER\] Round (\d+)/(\d+)', line)
-                    round_match = re.search(r'Round (\d+)/(\d+)', line)
-                    global_match = re.search(r'Global round (\d+)/(\d+)', line)
-                    init_match = re.search(r'Leader server initialized new training round (\d+)', line)
-                    
-                    if leader_match:
-                        latest_round_info = (int(leader_match.group(1)), int(leader_match.group(2)))
-                    elif round_match:
-                        latest_round_info = (int(round_match.group(1)), int(round_match.group(2)))
-                    elif global_match:
-                        latest_round_info = (int(global_match.group(1)), int(global_match.group(2)))
-                    
-                    if init_match:
-                        latest_initialized = int(init_match.group(1))
-                
-                # Use the chronologically last round information
-                if latest_round_info:
-                    latest_round, current_total_rounds = latest_round_info
-                    progress['current_round'] = latest_round
-                    
-                    # Fix: Account for 1-based round counting in federated learning
-                    # Round 1/3 should show as starting round 1 (33%), not completing 33%
-                    # For proper progress: Round 1 starting = 0-33%, Round 1 complete = 33%
-                    if latest_round > 0:
-                        # Calculate as: (completed_rounds / total_rounds) * 100
-                        # Since we're in round X, we've completed X-1 rounds
-                        completed_rounds = latest_round - 1
-                        round_progress = min(100, (completed_rounds / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
-                        # Add some progress within current round (5-15% depending on training stage)
-                        if completed_rounds < total_rounds:
-                            round_progress += min(15, (100 / total_rounds) * 0.3)  # Add 30% of one round as in-progress
-                    else:
-                        round_progress = 0
-                    progress['training_progress'] = min(100, round_progress)
-                elif latest_initialized:
-                    # Handle the "initialized new training round X" pattern (use only the most recent)
-                    progress['current_round'] = latest_initialized
-                    
-                    # Fix: Consistent progress calculation for initialization
-                    # When round X is initialized, we've completed X-1 rounds
-                    completed_rounds = latest_initialized - 1
-                    base_progress = (completed_rounds / max(1, total_rounds)) * 100 if total_rounds > 0 else 0
-                    # Add small progress to indicate round has started (2-5%)
-                    round_progress = min(100, base_progress + 3) if total_rounds > 0 else 3
-                    progress['training_progress'] = round_progress
-                
-                # Determine training status based on content
-                if ('Training completed' in content or 
-                    'Model aggregation completed successfully' in content or
-                    f'Round {total_rounds}/' in content):
-                    progress['training_progress'] = 100
-                    progress['status'] = 'completed'
-                elif latest_round_info or latest_initialized:
-                    progress['status'] = 'training'
-                elif 'Leader server initialized' in content:
-                    progress['status'] = 'starting'
-                
-                # Extract global performance metrics from leader server
-                global_loss_matches = re.findall(r'📊 Global Test Loss:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', content)
-                global_accuracy_matches = re.findall(r'🎯 Global Test Accuracy:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', content)
+                global_loss_matches = re.findall(r'📊 Global Test Loss:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', leader_content)
+                global_accuracy_matches = re.findall(r'🎯 Global Test Accuracy:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', leader_content)
                 if global_loss_matches:
                     progress['metrics']['global_loss'] = float(global_loss_matches[-1])
                 if global_accuracy_matches:
                     progress['metrics']['global_accuracy'] = float(global_accuracy_matches[-1])
                     
             except Exception as e:
-                print(f"Error reading leader server log: {e}")
+                print(f"Error reading leader server log for metrics: {e}")
     else:
         # Check client logs for training progress (original logic)
         for i in range(total_clients):
