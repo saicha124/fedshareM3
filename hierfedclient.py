@@ -180,8 +180,16 @@ def start_next_round(data):
     global training_round, round_weight
     
     if training_round != 0:
-        round_weight = pickle.loads(data)
-        model.set_weights(round_weight)
+        try:
+            if data and len(data) > 0:
+                round_weight = pickle.loads(data)
+                model.set_weights(round_weight)
+                print(f"Successfully loaded global model weights for round {training_round + 1}")
+            else:
+                print(f"Warning: Empty data received for round {training_round + 1}, using previous weights")
+        except (pickle.PickleError, EOFError, TypeError, ValueError) as e:
+            print(f"Error deserializing model weights: {e}")
+            print(f"Continuing with previous model weights for round {training_round + 1}")
     
     print(f"Model: HierarchicalFederated, "
           f"Round: {training_round + 1}/{config.hier_training_rounds}, "
@@ -290,6 +298,52 @@ def register_facility():
     except requests.RequestException as e:
         print(f"Registration error: {e}")
         return {"response": "registration_error"}, 500
+
+@api.route('/receive_global_model', methods=['POST'])
+def receive_global_model():
+    """Receive global model from Trusted Authority"""
+    try:
+        encrypted_model_data = request.get_json()
+        
+        if not encrypted_model_data:
+            print("Error: No model data received")
+            return {"response": "error", "message": "No data"}, 400
+        
+        # Extract the encrypted model data
+        model_data = encrypted_model_data.get('encrypted_data')
+        
+        if model_data:
+            # In production, decrypt the model here
+            # Convert string/base64 data back to bytes for pickle.loads()
+            try:
+                import base64
+                if isinstance(model_data, str):
+                    # If it's base64 encoded string, decode it
+                    try:
+                        model_bytes = base64.b64decode(model_data)
+                    except:
+                        # If not base64, encode as bytes directly
+                        model_bytes = model_data.encode('latin-1')
+                else:
+                    model_bytes = model_data
+                
+                print(f"Received global model from Trusted Authority")
+                
+                # Start next training round with properly formatted bytes
+                my_thread = threading.Thread(target=start_next_round, args=(model_bytes,))
+                my_thread.start()
+            except Exception as conversion_error:
+                print(f"Error converting model data: {conversion_error}")
+                return {"response": "error", "message": f"Data conversion failed: {conversion_error}"}, 500
+            
+            return {"response": "success", "facility_id": config.facility_index}
+        else:
+            print("Error: No model data in encrypted payload")
+            return {"response": "error", "message": "No model data"}, 400
+            
+    except Exception as e:
+        print(f"Error receiving global model: {e}")
+        return {"response": "error", "message": str(e)}, 500
 
 if __name__ == '__main__':
     print(f"Starting Hierarchical Federated Learning Facility {config.facility_index}")
