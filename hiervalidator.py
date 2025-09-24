@@ -51,19 +51,21 @@ def verify_facility_signature(share_data, signature, facility_public_key):
         print(f"Signature verification error: {e}")
         return False
 
-def validate_proof_of_work(facility_id, nonce, hash_result):
+def validate_proof_of_work(facility_id, nonce, hash_result, facility_public_key):
     """Validate Proof-of-Work from healthcare facility"""
     try:
-        # Recreate the PoW challenge
-        facility_data = f"{facility_id}||facility_public_key"
+        # Recreate the PoW challenge using the actual facility public key
+        facility_data = f"{facility_id}||{facility_public_key}"
         challenge_input = f"{nonce}||{facility_data}"
         computed_hash = hashlib.sha256(challenge_input.encode()).hexdigest()
         
-        # Check if hash meets difficulty requirement
+        # Check if hash meets difficulty requirement AND matches provided hash
         hash_value = int(computed_hash, 16)
-        is_valid = hash_value < config.pow_target
+        is_valid = hash_value < config.pow_target and computed_hash == hash_result
         
         print(f"PoW validation for facility {facility_id}: {'valid' if is_valid else 'invalid'}")
+        print(f"  Expected: {computed_hash}")
+        print(f"  Received: {hash_result}")
         return is_valid
         
     except Exception as e:
