@@ -142,10 +142,16 @@ def sign_data(data, private_key):
 
 def send_to_validator_committee(share_data, share_index):
     """Send secret share to validator committee for verification"""
+    # Create deterministic share UID for consensus
+    import hashlib
+    share_content = json.dumps(share_data, sort_keys=True, default=str)
+    share_uid = hashlib.sha256(f"{config.facility_index}:{share_index}:{training_round}:{share_content}".encode()).hexdigest()
+    
     # Create signed share
     signed_share = {
         'facility_id': config.facility_index,
         'share': share_data,
+        'share_uid': share_uid,  # Deterministic ID for consensus
         'signature': sign_data(share_data, facility_private_key),
         'public_key': facility_public_key,
         'round': training_round,

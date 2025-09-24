@@ -14,7 +14,21 @@ input_shape = (feature_vector_length,)
 def load_train_dataset(n_clients=3, permute=False):
     client_datasets = {}  # defining local datasets for each client
 
-    (x_train, y_train), (_, _) = mnist.load_data()
+    # Handle corrupted MNIST cache with retry
+    try:
+        (x_train, y_train), (_, _) = mnist.load_data()
+    except ValueError as e:
+        if "auto file hash does not match" in str(e) or "Incomplete or corrupted file detected" in str(e):
+            print(f"Corrupted MNIST cache detected: {e}")
+            print("Removing corrupted cache and retrying download...")
+            import os
+            cache_path = os.path.expanduser('~/.keras/datasets/mnist.npz')
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+            # Retry download
+            (x_train, y_train), (_, _) = mnist.load_data()
+        else:
+            raise e
 
     # Use the configured train_dataset_size instead of full dataset
     from config import Config

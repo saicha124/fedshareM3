@@ -203,8 +203,8 @@ def broadcast_to_fog_nodes(approved_share_data):
     facility_id = approved_share_data['facility_id']
     share_id = share_data['share_id']
     
-    # Determine which fog node should receive this share
-    fog_node_index = share_id % config.num_fog_nodes
+    # Determine which fog node should receive this share (use numeric routing)
+    fog_node_index = (share_id - 1) % config.num_fog_nodes
     fog_node_port = config.fog_node_base_port + fog_node_index
     
     # Add committee signature
@@ -256,7 +256,8 @@ def validate_share():
         signature = share_request['signature']
         facility_public_key = share_request['public_key']
         
-        share_id = f"{facility_id}_{share_data['share_id']}_{time.time()}"
+        # Use deterministic share_uid from client for consensus
+        share_id = share_request.get('share_uid', f"{facility_id}_{share_data['share_id']}_{time.time()}")
         
         print(f"Validator {config.validator_index} received share from facility {facility_id}")
         
