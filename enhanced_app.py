@@ -1540,8 +1540,17 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # Kill any existing processes first
-        subprocess.run(['pkill', '-f', f'{algorithm}'], capture_output=True)
-        time.sleep(1)
+        if algorithm == 'hierfed':
+            # For hierarchical federated learning, kill all related processes
+            subprocess.run(['pkill', '-f', 'hierfedclient'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'hiervalidator'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'hierfognode'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'hierleadserver'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'hierta'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'start-hierfed'], capture_output=True)
+        else:
+            subprocess.run(['pkill', '-f', f'{algorithm}'], capture_output=True)
+        time.sleep(2)  # Give more time for port cleanup
         
         # Clean up old logs - generate dynamic log directory names
         import importlib
