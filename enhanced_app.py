@@ -746,11 +746,18 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             if (data.status === 'completed') {
                 totalProgress = 100;
             } else {
-                totalProgress = Math.min(100, 
-                    (data.clients_started / data.total_clients * 25) +
-                    (data.current_round / data.total_rounds * 50) +
-                    (data.training_progress * 0.25)
-                );
+                // Fix: Use backend training_progress as primary, add small client startup bonus
+                // This ensures proper progression: Round 0/3 → ~25%, Round 1/3 → grows naturally
+                if (data.current_round === 0 || data.training_progress < 5) {
+                    // Before training starts or very early - show client startup progress
+                    totalProgress = Math.min(25, (data.clients_started / data.total_clients * 25));
+                } else {
+                    // During training - use backend calculation with small client bonus
+                    totalProgress = Math.min(100, 
+                        (data.clients_started / data.total_clients * 5) +  // Small client bonus (5% max)
+                        data.training_progress  // Use backend calculation as primary
+                    );
+                }
             }
             
             progressFill.style.width = totalProgress + '%';
