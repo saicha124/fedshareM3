@@ -37,6 +37,7 @@ def verify_committee_signature(data, signature, committee_public_key):
 
 def reconstruct_secret_shares(shares):
     """Reconstruct model parameters from secret shares (simplified Shamir's)"""
+    import base64
     if len(shares) < config.secret_threshold:
         print(f"Insufficient shares: {len(shares)}, need at least {config.secret_threshold}")
         return None
@@ -52,7 +53,18 @@ def reconstruct_secret_shares(shares):
         if 'data_fragment' in share_data:
             if facility_id not in reconstructed_data:
                 reconstructed_data[facility_id] = b''
-            reconstructed_data[facility_id] += share_data['data_fragment']
+            
+            # Handle both bytes and base64-encoded strings
+            fragment = share_data['data_fragment']
+            if isinstance(fragment, str):
+                # Decode base64 string to bytes
+                try:
+                    fragment = base64.b64decode(fragment)
+                except Exception as e:
+                    print(f"Error decoding base64 fragment for facility {facility_id}: {e}")
+                    continue
+            
+            reconstructed_data[facility_id] += fragment
     
     # Deserialize reconstructed model parameters for each facility
     facility_models = {}
