@@ -1551,8 +1551,17 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
         total_clients = config.Config.number_of_clients
         num_servers = config.Config.num_servers
         
+        # Generate the correct log directory name for each algorithm
         if algorithm == 'fedavg':
             log_dir_name = f"fedavg-mnist-client-{total_clients}"
+        elif algorithm == 'hierfed':
+            # Handle hierarchical federated learning directory structure
+            from config import HierConfig
+            hier_config = HierConfig()
+            facilities = hier_config.number_of_facilities
+            fog_nodes = hier_config.num_fog_nodes
+            validators = hier_config.committee_size
+            log_dir_name = f"hierfed-facilities-{facilities}-fog-{fog_nodes}-validators-{validators}"
         else:
             log_dir_name = f"{algorithm}-mnist-client-{total_clients}-server-{num_servers}"
         
