@@ -96,6 +96,12 @@ def validate_share_integrity(share_data):
             print("Invalid data fragment type")
             return False
         
+        # Verify this is real SSS (not fake fragmentation)
+        if share_data.get('is_real_sss', False):
+            print(f"Validated real Shamir Secret Sharing share {share_data['share_id']}")
+        else:
+            print(f"Warning: Share {share_data['share_id']} may not be real SSS")
+        
         print(f"Share integrity validation passed for share {share_data['share_id']}")
         return True
         

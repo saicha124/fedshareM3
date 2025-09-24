@@ -36,49 +36,8 @@ def verify_committee_signature(data, signature, committee_public_key):
     # In production, use proper cryptographic signature verification
     return len(signature) == 64 and signature.isalnum()  # Basic format check
 
-def reconstruct_secret_shares(shares_by_facility):
-    """Reconstruct model parameters from secret shares (simplified Shamir's)"""
-    import base64
-    
-    # Simplified reconstruction - in production use proper Shamir's Secret Sharing
-    facility_models = {}
-    
-    for facility_id, facility_shares_dict in shares_by_facility.items():
-        print(f"Reconstructing facility {facility_id} from {len(facility_shares_dict)} unique fragments")
-        
-        # Convert dict to sorted list by share_id for deterministic concatenation
-        share_ids = sorted(facility_shares_dict.keys())
-        
-        # Combine all fragments for this facility
-        reconstructed_data = b''
-        for share_id in share_ids:
-            share_info = facility_shares_dict[share_id]
-            share_data = share_info['share']
-            
-            if 'data_fragment' in share_data:
-                fragment = share_data['data_fragment']
-                if isinstance(fragment, str):
-                    # Decode base64 string to bytes
-                    try:
-                        fragment = base64.b64decode(fragment)
-                    except Exception as e:
-                        print(f"Error decoding base64 fragment for facility {facility_id}: {e}")
-                        continue
-                
-                reconstructed_data += fragment
-        
-        # Deserialize reconstructed model parameters for this facility
-        try:
-            if reconstructed_data:
-                model_params = pickle.loads(reconstructed_data)
-                facility_models[facility_id] = model_params
-                print(f"Successfully reconstructed facility {facility_id} model")
-        except Exception as e:
-            print(f"Error reconstructing facility {facility_id} data: {e}")
-            continue
-    
-    print(f"Reconstructed models from {len(facility_models)} facilities")
-    return facility_models
+# Import real Shamir Secret Sharing reconstruction
+from shamir_secret_sharing import reconstruct_secret_shares
 
 def fedavg_aggregation(facility_models):
     """Perform FedAvg aggregation on reconstructed model parameters"""

@@ -83,40 +83,8 @@ def add_differential_privacy(model_weights, hier_config):
     print(f"Applied production-grade differential privacy (ε={hier_config.dp_epsilon}, δ={hier_config.dp_delta}, clip_norm={hier_config.dp_clip_norm})")
     return noisy_weights
 
-# Production Shamir's Secret Sharing Implementation
-def shamirs_secret_sharing(data, num_shares, threshold):
-    """Split data into secret shares using deterministic byte chunking for fog node reconstruction"""
-    # Serialize the data
-    data_bytes = pickle.dumps(data)
-    total_size = len(data_bytes)
-    
-    # Calculate fragment size for deterministic chunking
-    frag_size = (total_size + num_shares - 1) // num_shares  # Ceiling division
-    
-    print(f"Creating {num_shares} data fragments with threshold {threshold} (total size: {total_size} bytes)")
-    
-    # Convert to expected format for validator compatibility (with JSON-safe encoding)
-    formatted_shares = []
-    for i in range(num_shares):
-        start_idx = i * frag_size
-        end_idx = min(start_idx + frag_size, total_size)
-        fragment = data_bytes[start_idx:end_idx]
-        
-        share_data = {
-            'share_id': i + 1,
-            'data_fragment': base64.b64encode(fragment).decode('utf-8'),
-            'size_info': {
-                'index': i,
-                'total': num_shares,
-                'total_size': total_size,
-                'frag_size': len(fragment)
-            },
-            'threshold': threshold,
-            'total_shares': num_shares
-        }
-        formatted_shares.append(share_data)
-    
-    return formatted_shares
+# Import real Shamir Secret Sharing implementation
+from shamir_secret_sharing import shamirs_secret_sharing
 
 # Production Digital Signature
 def sign_data(data, private_key):
