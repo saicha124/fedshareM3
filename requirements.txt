@@ -35,3 +35,13 @@ requests
 requests-toolbelt
 scikit-learn
 tensorflow
+cryptography
+emnist
+flask>=2.0.0
+keras>=2.6.0
+numpy>=1.21.0
+pandas>=1.3.0
+requests>=2.25.0
+requests-toolbelt>=1.0.0
+scikit-learn>=1.0.0
+tensorflow>=2.15.0
