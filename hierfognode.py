@@ -19,6 +19,7 @@ api = Flask(__name__)
 
 training_round = 0
 received_shares = []
+shares_by_facility = {}  # Track shares by facility: {facility_id: [share1, share2, ...]}
 total_download_cost = 0
 total_upload_cost = 0
 
@@ -35,44 +36,42 @@ def verify_committee_signature(data, signature, committee_public_key):
     # In production, use proper cryptographic signature verification
     return len(signature) == 64 and signature.isalnum()  # Basic format check
 
-def reconstruct_secret_shares(shares):
+def reconstruct_secret_shares(shares_by_facility):
     """Reconstruct model parameters from secret shares (simplified Shamir's)"""
     import base64
-    if len(shares) < config.secret_threshold:
-        print(f"Insufficient shares: {len(shares)}, need at least {config.secret_threshold}")
-        return None
     
     # Simplified reconstruction - in production use proper Shamir's Secret Sharing
-    reconstructed_data = {}
-    
-    for i, share_info in enumerate(shares):
-        share_data = share_info['share']
-        facility_id = share_info['facility_id']
-        
-        # Reconstruct by combining share fragments
-        if 'data_fragment' in share_data:
-            if facility_id not in reconstructed_data:
-                reconstructed_data[facility_id] = b''
-            
-            # Handle both bytes and base64-encoded strings
-            fragment = share_data['data_fragment']
-            if isinstance(fragment, str):
-                # Decode base64 string to bytes
-                try:
-                    fragment = base64.b64decode(fragment)
-                except Exception as e:
-                    print(f"Error decoding base64 fragment for facility {facility_id}: {e}")
-                    continue
-            
-            reconstructed_data[facility_id] += fragment
-    
-    # Deserialize reconstructed model parameters for each facility
     facility_models = {}
-    for facility_id, data_bytes in reconstructed_data.items():
+    
+    for facility_id, facility_shares in shares_by_facility.items():
+        print(f"Reconstructing facility {facility_id} from {len(facility_shares)} fragments")
+        
+        # Sort fragments by share_id for deterministic concatenation
+        facility_shares.sort(key=lambda x: x['share'].get('share_id', 0))
+        
+        # Combine all fragments for this facility
+        reconstructed_data = b''
+        for share_info in facility_shares:
+            share_data = share_info['share']
+            
+            if 'data_fragment' in share_data:
+                fragment = share_data['data_fragment']
+                if isinstance(fragment, str):
+                    # Decode base64 string to bytes
+                    try:
+                        fragment = base64.b64decode(fragment)
+                    except Exception as e:
+                        print(f"Error decoding base64 fragment for facility {facility_id}: {e}")
+                        continue
+                
+                reconstructed_data += fragment
+        
+        # Deserialize reconstructed model parameters for this facility
         try:
-            if data_bytes:
-                model_params = pickle.loads(data_bytes)
+            if reconstructed_data:
+                model_params = pickle.loads(reconstructed_data)
                 facility_models[facility_id] = model_params
+                print(f"Successfully reconstructed facility {facility_id} model")
         except Exception as e:
             print(f"Error reconstructing facility {facility_id} data: {e}")
             continue
@@ -153,15 +152,15 @@ def send_to_leader_server(aggregated_model):
 
 def process_aggregation():
     """Process the aggregation when enough shares are received"""
-    global received_shares, training_round
+    global received_shares, shares_by_facility, training_round
     
     time_logger.server_start()
     
     print(f"Processing aggregation for fog node {config.fog_node_index}")
-    print(f"Received {len(received_shares)} shares from facilities")
+    print(f"Received shares from {len(shares_by_facility)} facilities")
     
     # Reconstruct model parameters from secret shares
-    facility_models = reconstruct_secret_shares(received_shares)
+    facility_models = reconstruct_secret_shares(shares_by_facility)
     
     if not facility_models:
         print("Failed to reconstruct facility models from shares")
@@ -179,6 +178,7 @@ def process_aggregation():
     
     # Clear received shares for next round
     received_shares.clear()
+    shares_by_facility.clear()
     training_round += 1
     
     print(f"[DOWNLOAD] Total download cost so far: {total_download_cost}")
@@ -221,11 +221,24 @@ def receive_share():
         # Store the verified share
         received_shares.append(share_data)
         
-        print(f"Fog node {config.fog_node_index} received share {len(received_shares)}/{config.number_of_facilities}")
+        # Track shares by facility
+        facility_id = share_data.get('facility_id')
+        if facility_id not in shares_by_facility:
+            shares_by_facility[facility_id] = []
+        shares_by_facility[facility_id].append(share_data)
         
-        # Check if we have enough shares to start aggregation
-        if len(received_shares) >= config.number_of_facilities:
-            print(f"All shares received, starting aggregation...")
+        print(f"Fog node {config.fog_node_index} received share from facility {facility_id}")
+        print(f"Facility {facility_id} has {len(shares_by_facility[facility_id])}/{config.secret_num_shares_computed} fragments")
+        
+        # Check if we have all required fragments from all facilities
+        all_facilities_ready = True
+        for fid in range(config.number_of_facilities):
+            if fid not in shares_by_facility or len(shares_by_facility[fid]) < config.secret_num_shares_computed:
+                all_facilities_ready = False
+                break
+        
+        if all_facilities_ready:
+            print(f"All facilities have provided required fragments, starting aggregation...")
             # Start aggregation in separate thread
             aggregation_thread = threading.Thread(target=process_aggregation)
             aggregation_thread.start()
@@ -239,9 +252,10 @@ def receive_share():
 @api.route('/reset_round', methods=['POST'])
 def reset_round():
     """Reset for new training round"""
-    global received_shares, training_round
+    global received_shares, shares_by_facility, training_round
     
     received_shares.clear()
+    shares_by_facility.clear()
     print(f"Fog node {config.fog_node_index} reset for new round")
     
     return jsonify({"response": "reset_complete", "fog_node_id": config.fog_node_index})
