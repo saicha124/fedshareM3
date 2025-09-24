@@ -113,12 +113,73 @@ class ShamirSecretSharing:
         return bytes(secret_bytes)
 
 
+def _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size):
+    """Process large data in chunks to prevent hanging"""
+    import time
+    
+    chunks = []
+    for i in range(0, len(data_bytes), chunk_size):
+        chunk = data_bytes[i:i + chunk_size]
+        chunks.append(chunk)
+    
+    print(f"Processing {len(chunks)} chunks of ~{chunk_size} bytes each...")
+    
+    # Initialize Shamir Secret Sharing
+    sss = ShamirSecretSharing(threshold, num_shares)
+    
+    all_shares = [[] for _ in range(num_shares)]
+    
+    for chunk_idx, chunk in enumerate(chunks):
+        start_time = time.time()
+        
+        # Process this chunk
+        chunk_shares = sss.split_secret(chunk)
+        
+        # Combine with previous shares
+        for share_idx in range(num_shares):
+            all_shares[share_idx].extend(chunk_shares[share_idx])
+        
+        elapsed = time.time() - start_time
+        if chunk_idx % 10 == 0 or elapsed > 1.0:  # Log progress every 10 chunks or if slow
+            print(f"Processed chunk {chunk_idx + 1}/{len(chunks)} in {elapsed:.2f}s")
+    
+    print("Chunked secret sharing completed, formatting shares...")
+    
+    # Format shares for compatibility with existing code
+    formatted_shares = []
+    for i, share in enumerate(all_shares):
+        share_bytes = pickle.dumps(share)
+        share_data = {
+            'share_id': i + 1,
+            'data_fragment': base64.b64encode(share_bytes).decode('utf-8'),
+            'size_info': {
+                'index': i,
+                'total': num_shares,
+                'total_size': len(data_bytes),
+                'share_size': len(share_bytes)
+            },
+            'threshold': threshold,
+            'total_shares': num_shares,
+            'is_real_sss': True  # Mark as real SSS
+        }
+        formatted_shares.append(share_data)
+    
+    print(f"Successfully created {len(formatted_shares)} real Shamir secret shares via chunking")
+    return formatted_shares
+
+
 def shamirs_secret_sharing(data, num_shares, threshold):
     """Split data into real secret shares using Shamir's Secret Sharing"""
     # Serialize the data
     data_bytes = pickle.dumps(data)
     
     print(f"Creating {num_shares} secret shares with threshold {threshold} (total size: {len(data_bytes)} bytes)")
+    
+    # Performance optimization: for large data, use chunked processing
+    chunk_size = 10000  # Process in 10KB chunks to prevent hanging
+    if len(data_bytes) > chunk_size:
+        print(f"Large data detected ({len(data_bytes)} bytes), using chunked processing...")
+        return _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size)
     
     # Initialize Shamir Secret Sharing
     sss = ShamirSecretSharing(threshold, num_shares)
