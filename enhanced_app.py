@@ -101,6 +101,7 @@ def parse_logs_for_progress(algorithm):
                 leader_rounds = re.findall(r'\[LEADER\] Round (\d+)/(\d+)', content)
                 round_patterns = re.findall(r'Round (\d+)/(\d+)', content)
                 global_rounds = re.findall(r'Global round (\d+)/(\d+)', content)
+                initialized_rounds = re.findall(r'Leader server initialized new training round (\d+)', content)
                 
                 # Use any available round pattern
                 all_rounds = leader_rounds + round_patterns + global_rounds
@@ -111,13 +112,25 @@ def parse_logs_for_progress(algorithm):
                     # Calculate progress based on leader server rounds (0-based to 1-based)
                     round_progress = min(100, (latest_round / max(1, total_rounds)) * 100) if total_rounds > 0 else 0
                     progress['training_progress'] = round_progress
+                elif initialized_rounds:
+                    # Handle the "initialized new training round X" pattern
+                    latest_initialized = max([int(r) for r in initialized_rounds])
+                    progress['current_round'] = latest_initialized
+                    
+                    # Calculate progress - round has started but not necessarily completed
+                    round_progress = min(100, ((latest_initialized - 1) / max(1, total_rounds)) * 100 + (100 / max(1, total_rounds)) * 0.25) if total_rounds > 0 else 25
+                    progress['training_progress'] = round_progress
                 
-                # Check for training completion
+                # Determine training status based on content
                 if ('Training completed' in content or 
                     'Model aggregation completed successfully' in content or
                     f'Round {total_rounds}/' in content):
                     progress['training_progress'] = 100
                     progress['status'] = 'completed'
+                elif initialized_rounds or all_rounds:
+                    progress['status'] = 'training'
+                elif 'Leader server initialized' in content:
+                    progress['status'] = 'starting'
                 
                 # Extract global performance metrics from leader server
                 global_loss_matches = re.findall(r'📊 Global Test Loss:\s+([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)', content)
@@ -1206,109 +1219,6 @@ class EnhancedFedShareHandler(http.server.SimpleHTTPRequestHandler):
             <div id="config-status" style="margin-top: 10px;"></div>
         </div>
 
-        <div class="algorithm-section" style="background: linear-gradient(145deg, #fff2e6, #ffffff); border-color: #f39c12;">
-            <div class="algorithm-title">
-                <span class="emoji">🔒</span>Differential Privacy Configuration
-            </div>
-            <div class="algorithm-description">
-                Configure differential privacy parameters for Hierarchical Federated Learning to protect sensitive data.
-            </div>
-            <form id="dp-config-form" onsubmit="updateDPConfig(event)">
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="dp_enabled">Enable Differential Privacy:</label>
-                        <select id="dp_enabled" name="dp_enabled">
-                            <option value="true">Enabled</option>
-                            <option value="false">Disabled</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="dp_epsilon">Privacy Budget (ε):</label>
-                        <input type="number" id="dp_epsilon" name="dp_epsilon" min="0.1" max="10" step="0.1" value="1.0">
-                    </div>
-                    <div class="config-item">
-                        <label for="dp_delta">Privacy Budget (δ):</label>
-                        <input type="number" id="dp_delta" name="dp_delta" min="0.00001" max="0.01" step="0.00001" value="0.00001">
-                    </div>
-                    <div class="config-item">
-                        <label for="dp_clip_norm">Gradient Clipping Norm:</label>
-                        <input type="number" id="dp_clip_norm" name="dp_clip_norm" min="0.1" max="5.0" step="0.1" value="1.0">
-                    </div>
-                    <div class="config-item">
-                        <label for="dp_noise_multiplier">Noise Multiplier (σ):</label>
-                        <input type="number" id="dp_noise_multiplier" name="dp_noise_multiplier" min="0.01" max="1.0" step="0.01" value="0.1">
-                    </div>
-                    <div class="config-item">
-                        <label for="dp_mechanism">DP Mechanism:</label>
-                        <select id="dp_mechanism" name="dp_mechanism">
-                            <option value="gaussian">Gaussian</option>
-                            <option value="laplace">Laplace</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="controls" style="margin-top: 20px;">
-                    <button type="submit" class="btn">🔒 Update DP Configuration</button>
-                    <button type="button" class="btn btn-success" onclick="loadCurrentDPConfig()">🔄 Load Current DP</button>
-                </div>
-            </form>
-            <div id="dp-config-status" style="margin-top: 10px;"></div>
-        </div>
-
-        <div class="algorithm-section" style="background: linear-gradient(145deg, #e8f8ff, #ffffff); border-color: #3498db;">
-            <div class="algorithm-title">
-                <span class="emoji">🔐</span>Secret Sharing Configuration
-            </div>
-            <div class="algorithm-description">
-                Configure Shamir's secret sharing parameters for secure model aggregation. Note: Number of shares automatically matches the number of facilities.
-            </div>
-            <form id="ss-config-form" onsubmit="updateSSConfig(event)">
-                <div class="config-grid">
-                    <div class="config-item">
-                        <label for="secret_sharing_enabled">Enable Secret Sharing:</label>
-                        <select id="secret_sharing_enabled" name="secret_sharing_enabled">
-                            <option value="true">Enabled</option>
-                            <option value="false">Disabled</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="secret_threshold">Reconstruction Threshold:</label>
-                        <input type="number" id="secret_threshold" name="secret_threshold" min="2" max="10" value="2">
-                    </div>
-                    <div class="config-item">
-                        <label for="secret_num_shares_display">Number of Shares:</label>
-                        <input type="text" id="secret_num_shares_display" name="secret_num_shares_display" readonly value="Auto (matches facilities)" style="background: #f8f9fa; color: #6c757d;">
-                    </div>
-                    <div class="config-item">
-                        <label for="share_signing_enabled">Enable Share Signing:</label>
-                        <select id="share_signing_enabled" name="share_signing_enabled">
-                            <option value="true">Enabled</option>
-                            <option value="false">Disabled</option>
-                        </select>
-                    </div>
-                    <div class="config-item">
-                        <label for="hier_facilities">Number of Facilities:</label>
-                        <input type="number" id="hier_facilities" name="hier_facilities" min="2" max="10" value="4" onchange="updateSecretShares()">
-                    </div>
-                    <div class="config-item">
-                        <label for="hier_fog_nodes">Number of Fog Nodes:</label>
-                        <input type="number" id="hier_fog_nodes" name="hier_fog_nodes" min="2" max="5" value="3">
-                    </div>
-                    <div class="config-item">
-                        <label for="hier_validators">Committee Size:</label>
-                        <input type="number" id="hier_validators" name="hier_validators" min="2" max="5" value="3">
-                    </div>
-                    <div class="config-item">
-                        <label for="hier_training_rounds">Hier Training Rounds:</label>
-                        <input type="number" id="hier_training_rounds" name="hier_training_rounds" min="1" max="10" value="3">
-                    </div>
-                </div>
-                <div class="controls" style="margin-top: 20px;">
-                    <button type="submit" class="btn">🔐 Update Secret Sharing</button>
-                    <button type="button" class="btn btn-success" onclick="loadCurrentSSConfig()">🔄 Load Current SS</button>
-                </div>
-            </form>
-            <div id="ss-config-status" style="margin-top: 10px;"></div>
-        </div>
 
         <div class="algorithm-section">
             <div class="algorithm-title">
