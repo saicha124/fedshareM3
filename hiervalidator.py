@@ -144,7 +144,7 @@ def cast_vote(share_id, facility_id, share_data, signature, facility_public_key)
         if share_size == 0:
             print(f"Validator {validator_id}: Empty share data from facility {facility_id}")
             vote = 0
-        elif share_size > 10 * 1024 * 1024:  # 10MB limit
+        elif share_size > 50 * 1024 * 1024:  # 50MB limit (increased for larger models)
             print(f"Validator {validator_id}: Share too large from facility {facility_id} (size: {share_size} bytes)")
             vote = 0
     
