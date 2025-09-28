@@ -109,7 +109,7 @@ def sign_data(data, private_key):
         return signature
 
 def send_to_validator_committee(share_data, share_index):
-    """Send secret share to validator committee for verification"""
+    """Send secret share to ALL validator committee members for consensus"""
     # Create deterministic share UID for consensus
     import hashlib
     share_content = json.dumps(share_data, sort_keys=True, default=str)
@@ -126,22 +126,29 @@ def send_to_validator_committee(share_data, share_index):
         'timestamp': time.time()
     }
     
-    # Send to validator committee (round-robin or all validators)
-    validator_index = share_index % config.committee_size
-    validator_port = config.committee_base_port + validator_index
+    # Broadcast to ALL validators for proper consensus (FIX: was round-robin, now broadcasts to all)
+    successful_sends = 0
+    for validator_index in range(config.committee_size):
+        validator_port = config.committee_base_port + validator_index
+        url = f'http://{config.server_address}:{validator_port}/validate_share'
+        
+        try:
+            response = requests.post(url, json=signed_share, timeout=30)
+            if response.status_code == 200:
+                print(f"Share {share_index} sent to validator {validator_index} successfully")
+                successful_sends += 1
+            else:
+                print(f"Failed to send share to validator {validator_index}: {response.status_code}")
+        except requests.RequestException as e:
+            print(f"Network error sending to validator {validator_index}: {e}")
     
-    url = f'http://{config.server_address}:{validator_port}/validate_share'
-    
-    try:
-        response = requests.post(url, json=signed_share, timeout=30)
-        if response.status_code == 200:
-            print(f"Share {share_index} sent to validator {validator_index} successfully")
-            return True
-        else:
-            print(f"Failed to send share to validator {validator_index}: {response.status_code}")
-            return False
-    except requests.RequestException as e:
-        print(f"Network error sending to validator {validator_index}: {e}")
+    # Return True if at least a majority of validators received the share
+    quorum_needed = (config.committee_size // 2) + 1
+    if successful_sends >= quorum_needed:
+        print(f"Share {share_index} successfully sent to {successful_sends}/{config.committee_size} validators (quorum achieved)")
+        return True
+    else:
+        print(f"Share {share_index} failed to reach quorum: only {successful_sends}/{config.committee_size} validators received it")
         return False
 
 def start_next_round(data):
