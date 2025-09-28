@@ -193,9 +193,14 @@ def start_next_round(data):
     # Apply differential privacy using HierConfig
     dp_weights = add_differential_privacy(model_weights, config)
     
+    # Compress model weights before secret sharing for faster processing
+    import zlib
+    compressed_weights = zlib.compress(pickle.dumps(dp_weights), level=6)
+    print(f"Compressed weights from {len(pickle.dumps(dp_weights))} to {len(compressed_weights)} bytes ({100*len(compressed_weights)/len(pickle.dumps(dp_weights)):.1f}% of original)")
+    
     # Create secret shares using Shamir's Secret Sharing (if enabled)
     if config.secret_sharing_enabled:
-        secret_shares = shamirs_secret_sharing(dp_weights, config.secret_num_shares_computed, config.secret_threshold)
+        secret_shares = shamirs_secret_sharing(compressed_weights, config.secret_num_shares_computed, config.secret_threshold)
     else:
         print("Secret sharing disabled in configuration - using model weights directly")
         secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]
@@ -214,7 +219,7 @@ def start_next_round(data):
     training_round += 1
     
     # Log completion
-    print(f"********************** [FACILITY] Round {training_round} completed **********************")
+    print(f"********************** [FACILITY] Round {training_round-1} completed **********************")
     
     time_logger.client_idle()
 

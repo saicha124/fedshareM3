@@ -176,7 +176,7 @@ def shamirs_secret_sharing(data, num_shares, threshold):
     print(f"Creating {num_shares} secret shares with threshold {threshold} (total size: {len(data_bytes)} bytes)")
     
     # Performance optimization: for large data, use chunked processing
-    chunk_size = 10000  # Process in 10KB chunks to prevent hanging
+    chunk_size = 256000  # Process in 256KB chunks for faster processing
     if len(data_bytes) > chunk_size:
         print(f"Large data detected ({len(data_bytes)} bytes), using chunked processing...")
         return _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size)
