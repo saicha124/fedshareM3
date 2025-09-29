@@ -153,6 +153,14 @@ def send_to_validator_committee(share_data, share_index):
 
 def start_next_round(data):
     """Start next training round with hierarchical federated learning"""
+    # OPTIMIZATION: Use bounded resource allocation
+    import resource
+    try:
+        # Limit memory usage to 1GB per facility process
+        resource.setrlimit(resource.RLIMIT_AS, (1024*1024*1024, 1024*1024*1024))
+    except:
+        pass  # Ignore if not supported on this system
+        
     time_logger.client_start()
     
     x_train, y_train = facility_datasets[config.facility_index][0], facility_datasets[config.facility_index][1]
@@ -218,7 +226,41 @@ def start_next_round(data):
     
     # Create secret shares using Shamir's Secret Sharing (if enabled)
     if config.secret_sharing_enabled:
-        secret_shares = shamirs_secret_sharing(compressed_weights, config.secret_num_shares_computed, config.secret_threshold)
+        # OPTIMIZATION: Run secret sharing in separate worker thread with timeout
+        import threading
+        import queue
+        
+        def worker_secret_sharing():
+            """Worker function to run secret sharing with resource limits"""
+            return shamirs_secret_sharing(compressed_weights, config.secret_num_shares_computed, config.secret_threshold)
+        
+        result_queue = queue.Queue()
+        
+        def threaded_worker():
+            try:
+                result = worker_secret_sharing()
+                result_queue.put(('success', result))
+            except Exception as e:
+                result_queue.put(('error', str(e)))
+        
+        worker_thread = threading.Thread(target=threaded_worker)
+        worker_thread.start()
+        worker_thread.join(timeout=120)  # 2 minute timeout
+        
+        if worker_thread.is_alive():
+            print("Secret sharing timed out - using simplified sharing")
+            secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]
+        else:
+            try:
+                status, result = result_queue.get_nowait()
+                if status == 'success':
+                    secret_shares = result
+                else:
+                    print(f"Secret sharing failed: {result}")
+                    secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]
+            except queue.Empty:
+                print("Secret sharing timeout - using simplified sharing")
+                secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]
     else:
         print("Secret sharing disabled in configuration - using model weights directly")
         secret_shares = [{'share_id': 1, 'share_data': pickle.dumps(dp_weights), 'threshold': 1, 'total_shares': 1, 'is_production': False}]

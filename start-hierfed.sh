@@ -61,11 +61,20 @@ sleep 15
 
 # Step 6: Start Healthcare Facilities
 echo "Starting Healthcare Facilities..."
+# OPTIMIZATION: Stagger facility starts by 4 seconds to reduce resource contention
 for ((FACILITY = 0; FACILITY < FACILITIES; FACILITY++)); do
   echo "  Starting healthcare facility ${FACILITY}..."
+  # Set memory optimization environment variables for each facility
+  export OMP_NUM_THREADS=1 TF_NUM_INTRAOP_THREADS=1 TF_NUM_INTEROP_THREADS=1
   nohup python hierfedclient.py "${FACILITY}" &>logs/${DEST_DIRECTORY}/hierfedclient-${FACILITY}.log &
+  
+  # Stagger starts to prevent resource contention during secret sharing
+  if [ ${FACILITY} -lt $((FACILITIES - 1)) ]; then
+    echo "    Waiting 4 seconds before starting next facility..."
+    sleep 4
+  fi
 done
-echo "All healthcare facilities started"
+echo "All healthcare facilities started with staggered timing"
 
 # Wait for facilities to initialize and register
 echo "Waiting for facilities to register with Trusted Authority..."
