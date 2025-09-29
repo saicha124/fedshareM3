@@ -113,27 +113,100 @@ class ShamirSecretSharing:
         return bytes(secret_bytes)
 
 
+class OptimizedShamirSecretSharing:
+    """Optimized Shamir Secret Sharing using vectorized NumPy operations"""
+    
+    def __init__(self, threshold, num_shares):
+        if threshold > num_shares:
+            raise ValueError("Threshold cannot be greater than number of shares")
+        self.threshold = threshold
+        self.num_shares = num_shares
+        # Pre-generate random coefficients using NumPy for better performance
+        self.rng = np.random.RandomState(42)  # Seed for reproducibility during development
+        
+    def split_secret(self, secret_bytes):
+        """Vectorized secret splitting using NumPy for O(bytes) complexity"""
+        secret_array = np.frombuffer(secret_bytes, dtype=np.uint8)
+        
+        # Pre-generate polynomial coefficients (vectorized)
+        coeffs = self.rng.randint(0, 256, size=(len(secret_array), self.threshold - 1), dtype=np.uint8)
+        
+        # Pre-compute x-powers for all shares
+        x_values = np.arange(1, self.num_shares + 1, dtype=np.uint8)
+        
+        shares = []
+        for share_idx in range(self.num_shares):
+            x = x_values[share_idx]
+            
+            # Vectorized polynomial evaluation: f(x) = secret + a1*x + a2*x^2 + ...
+            share_data = secret_array.astype(np.uint16)  # Prevent overflow
+            for power in range(self.threshold - 1):
+                share_data += coeffs[:, power] * (x ** (power + 1))
+            
+            # Mod 256 to keep in byte range
+            share_data = (share_data % 256).astype(np.uint8)
+            shares.append(share_data.tobytes())
+            
+        return shares
+    
+    def reconstruct_secret(self, shares_subset):
+        """Vectorized secret reconstruction"""
+        if len(shares_subset) < self.threshold:
+            raise ValueError(f"Need at least {self.threshold} shares")
+        
+        # Convert shares to numpy arrays
+        shares_arrays = [np.frombuffer(share, dtype=np.uint8) for share in shares_subset[:self.threshold]]
+        secret_length = len(shares_arrays[0])
+        
+        # Vectorized Lagrange interpolation at x=0
+        reconstructed = np.zeros(secret_length, dtype=np.uint16)
+        
+        for i in range(self.threshold):
+            x_i = i + 1
+            
+            # Calculate Lagrange coefficient
+            numerator = 1
+            denominator = 1
+            for j in range(self.threshold):
+                if i != j:
+                    x_j = j + 1
+                    numerator *= (0 - x_j)
+                    denominator *= (x_i - x_j)
+            
+            coeff = numerator // denominator
+            reconstructed += shares_arrays[i] * coeff
+        
+        # Mod 256 and convert back to bytes
+        return (reconstructed % 256).astype(np.uint8).tobytes()
+
+
 def _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size):
-    """Process large data in chunks to prevent hanging"""
+    """Process large data in chunks to prevent hanging - OPTIMIZED VERSION"""
     import time
+    import numpy as np
     
-    chunks = []
-    for i in range(0, len(data_bytes), chunk_size):
-        chunk = data_bytes[i:i + chunk_size]
-        chunks.append(chunk)
+    # OPTIMIZATION: Use memoryview for zero-copy slicing
+    data_view = memoryview(data_bytes)
+    num_chunks = (len(data_bytes) + chunk_size - 1) // chunk_size
     
-    print(f"Processing {len(chunks)} chunks of ~{chunk_size} bytes each...")
+    print(f"Processing {num_chunks} chunks of ~{chunk_size} bytes each...")
     
-    # Initialize Shamir Secret Sharing
-    sss = ShamirSecretSharing(threshold, num_shares)
+    # Initialize Shamir Secret Sharing with optimized polynomial generation
+    sss = OptimizedShamirSecretSharing(threshold, num_shares)
     
     all_shares = [[] for _ in range(num_shares)]
     
-    for chunk_idx, chunk in enumerate(chunks):
+    # OPTIMIZATION: Process chunks using memoryview (zero-copy)
+    for chunk_idx in range(num_chunks):
         start_time = time.time()
         
+        # Extract chunk using memoryview (zero-copy)
+        start_pos = chunk_idx * chunk_size
+        end_pos = min(start_pos + chunk_size, len(data_bytes))
+        chunk_data = bytes(data_view[start_pos:end_pos])
+        
         # Process this chunk
-        chunk_shares = sss.split_secret(chunk)
+        chunk_shares = sss.split_secret(chunk_data)
         
         # Combine with previous shares
         for share_idx in range(num_shares):
@@ -141,7 +214,7 @@ def _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size):
         
         elapsed = time.time() - start_time
         if chunk_idx % 10 == 0 or elapsed > 1.0:  # Log progress every 10 chunks or if slow
-            print(f"Processed chunk {chunk_idx + 1}/{len(chunks)} in {elapsed:.2f}s")
+            print(f"Processed chunk {chunk_idx + 1}/{num_chunks} in {elapsed:.2f}s")
     
     print("Chunked secret sharing completed, formatting shares...")
     
@@ -175,8 +248,8 @@ def shamirs_secret_sharing(data, num_shares, threshold):
     
     print(f"Creating {num_shares} secret shares with threshold {threshold} (total size: {len(data_bytes)} bytes)")
     
-    # Performance optimization: for large data, use chunked processing
-    chunk_size = 256000  # Process in 256KB chunks for faster processing
+    # OPTIMIZATION: Reduced chunk size for better memory management
+    chunk_size = 65536  # Process in 64KB chunks (reduced from 256KB) for better resource management
     if len(data_bytes) > chunk_size:
         print(f"Large data detected ({len(data_bytes)} bytes), using chunked processing...")
         return _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size)

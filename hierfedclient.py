@@ -197,13 +197,24 @@ def start_next_round(data):
     # Get model weights for sharing
     model_weights = model.get_weights()
     
-    # Apply differential privacy using HierConfig
-    dp_weights = add_differential_privacy(model_weights, config)
+    # OPTIMIZATION: Convert to float16 for 50% memory reduction
+    import numpy as np
+    optimized_weights = []
+    for weight_array in model_weights:
+        if weight_array.dtype in [np.float32, np.float64]:
+            # Convert to float16 for memory optimization
+            optimized_weights.append(weight_array.astype(np.float16))
+        else:
+            optimized_weights.append(weight_array)
     
-    # Compress model weights before secret sharing for faster processing
+    # Apply differential privacy using HierConfig
+    dp_weights = add_differential_privacy(optimized_weights, config)
+    
+    # OPTIMIZATION: Reuse pickle buffer to avoid double serialization
     import zlib
-    compressed_weights = zlib.compress(pickle.dumps(dp_weights), level=6)
-    print(f"Compressed weights from {len(pickle.dumps(dp_weights))} to {len(compressed_weights)} bytes ({100*len(compressed_weights)/len(pickle.dumps(dp_weights)):.1f}% of original)")
+    dp_weights_bytes = pickle.dumps(dp_weights)
+    compressed_weights = zlib.compress(dp_weights_bytes, level=6)
+    print(f"Compressed weights from {len(dp_weights_bytes)} to {len(compressed_weights)} bytes ({100*len(compressed_weights)/len(dp_weights_bytes):.1f}% of original)")
     
     # Create secret shares using Shamir's Secret Sharing (if enabled)
     if config.secret_sharing_enabled:
