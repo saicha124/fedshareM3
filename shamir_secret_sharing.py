@@ -114,70 +114,103 @@ class ShamirSecretSharing:
 
 
 class OptimizedShamirSecretSharing:
-    """Optimized Shamir Secret Sharing using vectorized NumPy operations"""
+    """Optimized Shamir Secret Sharing using vectorized NumPy operations with correct finite field math"""
     
     def __init__(self, threshold, num_shares):
         if threshold > num_shares:
             raise ValueError("Threshold cannot be greater than number of shares")
         self.threshold = threshold
         self.num_shares = num_shares
+        self.prime = 257  # Use prime for finite field operations (same as original)
         # Pre-generate random coefficients using NumPy for better performance
         self.rng = np.random.RandomState(42)  # Seed for reproducibility during development
         
+    def _mod_inverse(self, a, m=None):
+        """Calculate modular multiplicative inverse using extended Euclidean algorithm"""
+        if m is None:
+            m = self.prime
+        
+        def extended_gcd(a, b):
+            if a == 0:
+                return b, 0, 1
+            gcd, x1, y1 = extended_gcd(b % a, a)
+            x = y1 - (b // a) * x1
+            y = x1
+            return gcd, x, y
+        
+        gcd, x, _ = extended_gcd(a % m, m)
+        if gcd != 1:
+            raise ValueError("Modular inverse does not exist")
+        return (x % m + m) % m
+        
     def split_secret(self, secret_bytes):
-        """Vectorized secret splitting using NumPy for O(bytes) complexity"""
+        """Vectorized secret splitting with correct finite field operations"""
         secret_array = np.frombuffer(secret_bytes, dtype=np.uint8)
         
-        # Pre-generate polynomial coefficients (vectorized)
-        coeffs = self.rng.randint(0, 256, size=(len(secret_array), self.threshold - 1), dtype=np.uint8)
-        
-        # Pre-compute x-powers for all shares
-        x_values = np.arange(1, self.num_shares + 1, dtype=np.uint8)
+        # Pre-generate polynomial coefficients (vectorized) - use prime field
+        coeffs = self.rng.randint(0, self.prime, size=(len(secret_array), self.threshold - 1))
         
         shares = []
         for share_idx in range(self.num_shares):
-            x = x_values[share_idx]
+            x = share_idx + 1  # x-coordinate (1-indexed)
             
             # Vectorized polynomial evaluation: f(x) = secret + a1*x + a2*x^2 + ...
-            share_data = secret_array.astype(np.uint16)  # Prevent overflow
+            share_y_values = secret_array.astype(np.uint32)  # Prevent overflow
             for power in range(self.threshold - 1):
-                share_data += coeffs[:, power] * (x ** (power + 1))
+                term = (coeffs[:, power] * (x ** (power + 1))) % self.prime
+                share_y_values = (share_y_values + term) % self.prime
             
-            # Mod 256 to keep in byte range
-            share_data = (share_data % 256).astype(np.uint8)
-            shares.append(share_data.tobytes())
+            # Format as (x, y) pairs like original implementation
+            share_data = []
+            for byte_idx, y_val in enumerate(share_y_values):
+                share_data.append((x, int(y_val)))
+            
+            shares.append(share_data)
             
         return shares
     
     def reconstruct_secret(self, shares_subset):
-        """Vectorized secret reconstruction"""
+        """Vectorized secret reconstruction with correct Lagrange interpolation"""
         if len(shares_subset) < self.threshold:
             raise ValueError(f"Need at least {self.threshold} shares")
         
-        # Convert shares to numpy arrays
-        shares_arrays = [np.frombuffer(share, dtype=np.uint8) for share in shares_subset[:self.threshold]]
-        secret_length = len(shares_arrays[0])
+        # Use only the required number of shares
+        shares_to_use = shares_subset[:self.threshold]
         
-        # Vectorized Lagrange interpolation at x=0
-        reconstructed = np.zeros(secret_length, dtype=np.uint16)
+        # Determine secret length from first share
+        secret_length = len(shares_to_use[0])
+        secret_bytes = bytearray()
         
-        for i in range(self.threshold):
-            x_i = i + 1
+        # Reconstruct each byte using proper finite field Lagrange interpolation
+        for byte_idx in range(secret_length):
+            # Extract (x, y) pairs for this byte position
+            points = []
+            for share in shares_to_use:
+                if byte_idx < len(share):
+                    x, y = share[byte_idx]
+                    points.append((x, y))
             
-            # Calculate Lagrange coefficient
-            numerator = 1
-            denominator = 1
-            for j in range(self.threshold):
-                if i != j:
-                    x_j = j + 1
-                    numerator *= (0 - x_j)
-                    denominator *= (x_i - x_j)
-            
-            coeff = numerator // denominator
-            reconstructed += shares_arrays[i] * coeff
+            if len(points) >= self.threshold:
+                # Perform Lagrange interpolation at x=0 using modular inverse
+                reconstructed_byte = 0
+                for i, (x_i, y_i) in enumerate(points):
+                    # Calculate Lagrange basis polynomial L_i(0)
+                    numerator = 1
+                    denominator = 1
+                    for j, (x_j, y_j) in enumerate(points):
+                        if i != j:
+                            numerator = (numerator * (0 - x_j)) % self.prime
+                            denominator = (denominator * (x_i - x_j)) % self.prime
+                    
+                    # Use modular inverse instead of integer division
+                    if denominator != 0:
+                        denominator_inv = self._mod_inverse(denominator, self.prime)
+                        lagrange_coeff = (numerator * denominator_inv) % self.prime
+                        reconstructed_byte = (reconstructed_byte + y_i * lagrange_coeff) % self.prime
+                
+                secret_bytes.append(reconstructed_byte % 256)
         
-        # Mod 256 and convert back to bytes
-        return (reconstructed % 256).astype(np.uint8).tobytes()
+        return bytes(secret_bytes)
 
 
 def _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size):
@@ -191,7 +224,7 @@ def _chunked_secret_sharing(data_bytes, num_shares, threshold, chunk_size):
     
     print(f"Processing {num_chunks} chunks of ~{chunk_size} bytes each...")
     
-    # Initialize Shamir Secret Sharing with optimized polynomial generation
+    # Use OptimizedShamirSecretSharing for better performance while maintaining correctness
     sss = OptimizedShamirSecretSharing(threshold, num_shares)
     
     all_shares = [[] for _ in range(num_shares)]
